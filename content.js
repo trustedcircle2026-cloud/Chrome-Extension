@@ -348,16 +348,16 @@
     try { return JSON.parse(text); }
     catch (_) { return text.trim(); }
   }
+  const wait = ms => new Promise(resolve => setTimeout(resolve,ms));
   async function downloadGstr1Json(period,button) {
-    // GSTR-1 offline JSON sequence observed on the GST Portal:
-    // 1) role status, 2) offline upload summary, 3) save/validate,
-    // 4) generate file, 5) request file_num=1 download redirect.
+    // GST Portal GSTR-1 offline download sequence:
+    // 1) return filing status 2) upload summary 3) save/validation
+    // 4) generate offline JSON package 5) request file_num=1.
     const params = new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"});
     const statusUrl = API + "/rolestatus?rtn_prd=" + encodeURIComponent(period);
     const statusData = await callGstApi(statusUrl,"GSTR-1 filing status");
-    const currentStatus = filing(statusData,"GSTR1");
-    if (!currentStatus.filed) {
-      throw new Error("GSTR-1 for " + period + " is not marked Filed by the GST Portal (" + currentStatus.label + "). Download stopped before file generation.");
+    if (!filing(statusData,"GSTR1").filed) {
+      throw new Error("GSTR-1 for " + period + " is not marked Filed by the GST Portal. Download stopped.");
     }
 
     button.textContent = "Summary…";
@@ -373,24 +373,27 @@
       new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:"GSTR1"}).toString();
     const generatedData = await callGstApi(generateUrl,"GSTR-1 JSON file generation");
 
-    // file_num=1 is required by the portal's download-url endpoint for the
-    // first generated GSTR-1 JSON archive. Use Chrome's native download manager
-    // so it follows the signed files.gst.gov.in redirect without page CORS.
+    // Give the portal's asynchronous file service time to publish file_num=1.
+    // Chrome Downloads follows the authenticated redirect; page fetch cannot
+    // reliably read the ZIP because files.gst.gov.in may reject CORS.
+    button.textContent = "Preparing file…";
+    await wait(1500);
     button.textContent = "Downloading…";
     const downloadUrl = API + "/offline/download/url?" +
       new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1",file_num:"1"}).toString();
     const filename = "GSTR1_" + period + "_JSON.zip";
     const downloadId = await startNativeDownload(downloadUrl,filename);
 
-    apiData = apiData.filter(x => !["gstr1-status","gstr1-summary","gstr1-validation","gstr1-generate","gstr1-download"].includes(x.name));
+    apiData = apiData.filter(x => !/^gstr1-/.test(x.name));
     apiData.push(
       {name:"gstr1-status",url:statusUrl,ok:true,data:statusData},
       {name:"gstr1-summary",url:summaryUrl,ok:true,data:summaryData},
       {name:"gstr1-validation",url:validateUrl,ok:true,data:validationData},
       {name:"gstr1-generate",url:generateUrl,ok:true,data:generatedData},
-      {name:"gstr1-download",url:downloadUrl,ok:true,data:{downloadId,filename}}
+      {name:"gstr1-download-url",url:downloadUrl,ok:true,data:{downloadId,filename,note:"Chrome Downloads follows the GST Portal authenticated file redirect."}}
     );
     renderDeveloper();
+    return downloadId;
   }
   async function download(type,period,format,button) {
     if (downloading) return;
