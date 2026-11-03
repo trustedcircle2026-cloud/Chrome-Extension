@@ -335,9 +335,9 @@
     const text = await response.text();
     const finalUrl = String(response.url || "");
     const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-    const htmlResponse = /<\\s*!doctype\\s+html|<\\s*html[\\s>]/i.test(text.slice(0,1200)) ||
+    const htmlResponse = /<\s*!doctype\s+html|<\s*html[\s>]/i.test(text.slice(0,1200)) ||
       contentType.includes("text/html") ||
-      /services\\.gst\\.gov\\.in\\/services\\/(login|error\\/accessdenied)/i.test(finalUrl);
+      /services\.gst\.gov\.in\/services\/(login|error\/accessdenied)/i.test(finalUrl);
     if (htmlResponse) {
       throw new Error("GST session expired or access denied while calling " + label + ". The portal returned its login page, not a return file. Click Go to Login, sign in, reopen the Returns dashboard, and retry.");
     }
@@ -438,7 +438,7 @@
   }
   chrome.runtime.onMessage.addListener((message,sender,reply) => {
     if (message && message.type === "GST_DOWNLOAD_FAILED") {
-      alert("GST download was stopped. " + (message.error || "The portal returned an HTML/login page instead of a ZIP file.") + "\\nPlease sign in again and retry.");
+      alert("GST download was stopped. " + (message.error || "The portal returned an HTML/login page instead of a ZIP file.") + "\nPlease sign in again and retry.");
       return false;
     }
     if (message && message.type === "GST_TOGGLE_PANEL") {
