@@ -16,7 +16,9 @@ Chrome Manifest V3 extension for the GST Portal. It reads the taxpayer profile a
 - On `https://return.gst.gov.in/returns/auth/dashboard`, the compact panel shows the trade name, GSTIN, state, financial-year selector and Refresh button.
 - Refresh checks all 12 periods for the selected financial year using the portal's `rolestatus?rtn_prd=MMYYYY` response.
 - A report action is offered only when the portal marks that return as filed.
+- Before downloading, the extension rechecks the live filing status and generates the report through the GST Portal. It then hands the portal download URL to Chrome's native Downloads API, avoiding page-context CORS failures on redirects to `files.gst.gov.in`.
 - GSTR-1 JSON and GSTR-2A JSON/Excel use the portal's generate and download URL flow. GSTR-3B filing status is displayed, but no download action is exposed until its report-specific workflow is verified.
+- Taxpayer name and GSTIN come from the authenticated `ustatus` response. The state code (`stcd`, with GSTIN prefix fallback) is resolved using the GST state master (`c` → `n`).
 
 ## Developer view
 
