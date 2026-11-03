@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GST Report Downloader",
-  "version": "0.4.0",
-  "description": "Draggable GST Portal report panel with authenticated dashboard data.",
+  "version": "0.5.0",
+  "description": "Persistent resizable GST Portal report panel with filing-status checks and authenticated report downloads.",
   "permissions": [
     "activeTab",
     "tabs",
