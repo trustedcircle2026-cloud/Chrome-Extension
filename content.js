@@ -320,19 +320,33 @@
     return result.downloadId;
   }
   async function callGstApi(url,label) {
-    const response = await fetch(url,{
-      method:"GET",
-      credentials:"include",
-      cache:"no-store",
-      headers:{Accept:"application/json, text/plain, */*"}
-    });
+    let response;
+    try {
+      response = await fetch(url,{
+        method:"GET",
+        credentials:"include",
+        cache:"no-store",
+        redirect:"follow",
+        headers:{Accept:"application/json, text/plain, */*"}
+      });
+    } catch (error) {
+      throw new Error(label + " could not reach the GST Portal. Check that you are logged in and reload the GST dashboard. (" + error.message + ")");
+    }
     const text = await response.text();
+    const finalUrl = String(response.url || "");
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const htmlResponse = /<\\s*!doctype\\s+html|<\\s*html[\\s>]/i.test(text.slice(0,1200)) ||
+      contentType.includes("text/html") ||
+      /services\\.gst\\.gov\\.in\\/services\\/(login|error\\/accessdenied)/i.test(finalUrl);
+    if (htmlResponse) {
+      throw new Error("GST session expired or access denied while calling " + label + ". The portal returned its login page, not a return file. Click Go to Login, sign in, reopen the Returns dashboard, and retry.");
+    }
     if (!response.ok) throw new Error(label + " failed (HTTP " + response.status + ").");
-    if (/^\\s*<!doctype html|^\\s*<html/i.test(text)) {
-      throw new Error(label + " returned an HTML page instead of API data. The GST session may have expired.");
+    if (response.redirected && /services\\.gst\\.gov\\/services\\/(login|error\\/accessdenied)/i.test(finalUrl)) {
+      throw new Error("GST session expired. Please sign in again before downloading.");
     }
     try { return JSON.parse(text); }
-    catch (_) { return text; }
+    catch (_) { return text.trim(); }
   }
   async function downloadGstr1Json(period,button) {
     // GST's supported GSTR-1 offline workflow: status -> upload summary ->
@@ -364,6 +378,9 @@
     button.textContent = "Downloading…";
     const downloadUrl = API + "/offline/download/url?" +
       new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"}).toString();
+    // Validate the URL-resolver endpoint before asking Chrome to save the file.
+    // A login/access-denied HTML response must never be saved with a .zip name.
+    await callGstApi(downloadUrl,"GSTR-1 download link");
     const filename = "GSTR1_" + period + "_JSON.zip";
     await startNativeDownload(downloadUrl,filename);
 
