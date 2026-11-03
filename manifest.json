@@ -7,11 +7,13 @@
     "activeTab",
     "tabs",
     "storage",
-    "scripting"
+    "scripting",
+    "downloads"
   ],
   "host_permissions": [
     "https://return.gst.gov.in/*",
-    "https://services.gst.gov.in/*"
+    "https://services.gst.gov.in/*",
+    "https://files.gst.gov.in/*"
   ],
   "action": {
     "default_title": "Open or close movable GST Report Downloader"
