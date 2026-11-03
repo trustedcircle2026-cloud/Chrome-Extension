@@ -378,9 +378,9 @@
     button.textContent = "Downloading…";
     const downloadUrl = API + "/offline/download/url?" +
       new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"}).toString();
-    // Validate the URL-resolver endpoint before asking Chrome to save the file.
-    // A login/access-denied HTML response must never be saved with a .zip name.
-    await callGstApi(downloadUrl,"GSTR-1 download link");
+    // This endpoint redirects to files.gst.gov.in. Do not fetch it from the
+    // page context: that redirect is cross-origin and the file host may not
+    // grant CORS. Chrome Downloads follows the signed redirect natively.
     const filename = "GSTR1_" + period + "_JSON.zip";
     await startNativeDownload(downloadUrl,filename);
 
@@ -437,6 +437,10 @@
     }
   }
   chrome.runtime.onMessage.addListener((message,sender,reply) => {
+    if (message && message.type === "GST_DOWNLOAD_FAILED") {
+      alert("GST download was stopped. " + (message.error || "The portal returned an HTML/login page instead of a ZIP file.") + "\\nPlease sign in again and retry.");
+      return false;
+    }
     if (message && message.type === "GST_TOGGLE_PANEL") {
       if (panel && panel.isConnected) { saveGeometry();panel.remove();panel=null;reply({ok:true,visible:false}); }
       else { makePanel();if (isDashboard()) loadProfile();reply({ok:true,visible:true}); }
