@@ -196,8 +196,15 @@
     const profile = statusRecord && statusRecord.data && typeof statusRecord.data === "object" ? statusRecord.data : {};
     let gstin = String(profile.gstin || "").trim().toUpperCase();
     if (!/^[0-9A-Z]{15}$/.test(gstin)) gstin = "";
-    const code = String(profile.stcd || gstin.slice(0,2) || "").padStart(2,"0");
-    identity = {name:String(profile.bname || "").trim(),gstin,state:states[code] || "—"};
+    // GST Portal state master: state code ("c") -> state name ("n").
+    // Prefer ustatus.stcd; fall back to the GSTIN's first two characters if needed.
+    const stateCandidates = [profile.stcd, gstin.slice(0,2)];
+    let stateName = "—";
+    for (const candidate of stateCandidates) {
+      const code = String(candidate || "").trim().padStart(2,"0");
+      if (/^\\d{2}$/.test(code) && states[code]) { stateName = states[code]; break; }
+    }
+    identity = {name:String(profile.bname || "").trim(),gstin,state:stateName};
     renderIdentity();
     populateYears();
     renderDeveloper();
