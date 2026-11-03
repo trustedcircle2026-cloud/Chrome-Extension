@@ -1,61 +1,398 @@
 (() => {
-  if (window.__gstDownloaderV2) return;
-  window.__gstDownloaderV2 = true;
-  const ROOT="https://return.gst.gov.in/returns/auth", API=ROOT+"/api", DASH=ROOT+"/dashboard";
-  const $=id=>document.getElementById(id), esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const states={"01":"Jammu and Kashmir","02":"Himachal Pradesh","03":"Punjab","04":"Chandigarh","05":"Uttarakhand","06":"Haryana","07":"Delhi","08":"Rajasthan","09":"Uttar Pradesh","10":"Bihar","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","18":"Assam","19":"West Bengal","20":"Jharkhand","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","24":"Gujarat","26":"Dadra and Nagar Haveli and Daman and Diu","27":"Maharashtra","29":"Karnataka","30":"Goa","31":"Lakshadweep","32":"Kerala","33":"Tamil Nadu","34":"Puducherry","35":"Andaman and Nicobar Islands","36":"Telangana","37":"Andhra Pradesh","38":"Ladakh","97":"Other Territory"};
-  const months=["April","May","June","July","August","September","October","November","December","January","February","March"];
-  const types=["GSTR3B","GSTR1","GSTR2A"];
-  let panel=null, apiData=[], identity={name:"",gstin:"",state:""}, rows=[], loading=false, downloading=false;
+  if (window.__gstDownloaderV3) return;
+  window.__gstDownloaderV3 = true;
 
-  function walk(v,fn,p=""){if(v==null)return;fn(v,p);if(Array.isArray(v))v.forEach((x,i)=>walk(x,fn,p+"["+i+"]"));else if(typeof v==="object")Object.entries(v).forEach(([k,x])=>walk(x,fn,p?p+"."+k:k));}
-  function observed(name){for(const e of performance.getEntriesByType("resource"))try{const u=new URL(e.name);if(u.origin===location.origin&&u.pathname.toLowerCase().endsWith("/"+name.toLowerCase()))return u.href;}catch(_){}return"";}
-  async function json(url){const r=await fetch(url,{credentials:"include",cache:"no-store",headers:{Accept:"application/json, text/plain, */*"}}),t=await r.text();if(!r.ok)throw Error("HTTP "+r.status+" from GST Portal");try{return JSON.parse(t);}catch(_){return t;}}
-  async function loadProfile(){
-    const urls={ustatus:observed("ustatus")||(location.hostname==="return.gst.gov.in"?API+"/ustatus":"https://services.gst.gov.in/services/api/ustatus"),dropdown:API+"/dropdown",years:observed("getFinancialYears")||"https://services.gst.gov.in/services/api/getFinancialYears"};
-    const results=await Promise.allSettled(Object.entries(urls).map(async([k,u])=>({name:k,url:u,data:await json(u),ok:true})));
-    apiData=results.map((r,i)=>r.status==="fulfilled"?r.value:{name:Object.keys(urls)[i],url:Object.values(urls)[i],ok:false,error:String(r.reason)});
-    let name="",gstin="";
-    const st=apiData.find(x=>x.name==="ustatus"&&x.ok)?.data;
-    walk(st,(v,p)=>{const k=p.split(".").pop().replace(/\[\d+\]/g,"").toLowerCase();if(typeof v==="string"){if(k==="bname"&&!name)name=v.trim();if(k==="gstin"&&/^[0-9A-Z]{15}$/.test(v.trim()))gstin=v.trim();}});
-    gstin=gstin||(document.body.innerText.match(/\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/)||[])[0]||"";
-    identity={name,gstin,state:states[gstin.slice(0,2)]||"—"};renderIdentity();renderDev();populateYears();
+  const ROOT = "https://return.gst.gov.in/returns/auth";
+  const API = ROOT + "/api";
+  const DASH = ROOT + "/dashboard";
+  const LOGIN = "https://services.gst.gov.in/services/login";
+  const $ = id => document.getElementById(id);
+  const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const states = {"01":"Jammu and Kashmir","02":"Himachal Pradesh","03":"Punjab","04":"Chandigarh","05":"Uttarakhand","06":"Haryana","07":"Delhi","08":"Rajasthan","09":"Uttar Pradesh","10":"Bihar","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","18":"Assam","19":"West Bengal","20":"Jharkhand","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","24":"Gujarat","26":"Dadra and Nagar Haveli and Daman and Diu","27":"Maharashtra","29":"Karnataka","30":"Goa","31":"Lakshadweep","32":"Kerala","33":"Tamil Nadu","34":"Puducherry","35":"Andaman and Nicobar Islands","36":"Telangana","37":"Andhra Pradesh","38":"Ladakh","97":"Other Territory"};
+  const months = ["April","May","June","July","August","September","October","November","December","January","February","March"];
+  const returnTypes = ["GSTR3B","GSTR1","GSTR2A"];
+  let panel = null, apiData = [], identity = {name:"",gstin:"",state:""}, rows = [], loading = false, downloading = false;
+
+  const path = () => location.pathname.replace(/\/+$/, "");
+  const isAccessDenied = () => location.hostname === "services.gst.gov.in" && path() === "/services/error/accessdenied";
+  const isDashboard = () => location.hostname === "return.gst.gov.in" && path() === "/returns/auth/dashboard";
+  const isPortalDomain = () => ["return.gst.gov.in","services.gst.gov.in"].includes(location.hostname);
+
+  function walk(value, fn, p) {
+    if (value == null) return;
+    fn(value, p || "");
+    if (Array.isArray(value)) value.forEach((x,i) => walk(x,fn,(p || "") + "[" + i + "]"));
+    else if (typeof value === "object") Object.keys(value).forEach(k => walk(value[k],fn,p ? p + "." + k : k));
   }
-  function yearsFrom(data){const found=new Set();walk(data,v=>{if(typeof v==="string")(v.match(/\b20\d{2}\s*[-–]\s*\d{2,4}\b/g)||[]).forEach(x=>found.add(x.replace(/\s/g,"").replace("–","-")));});return [...found];}
-  function years(){const a=apiData.find(x=>x.name==="dropdown"&&x.ok)?.data,b=apiData.find(x=>x.name==="years"&&x.ok)?.data;let out=[...new Set([...yearsFrom(a),...yearsFrom(b)])];if(!out.length)out=[...new Set([...document.querySelectorAll("select option")].map(o=>o.textContent.trim()).filter(x=>/^20\d{2}-\d{2,4}$/.test(x)))];return out.sort((x,y)=>+y.slice(0,4)- +x.slice(0,4));}
-  function fyMonths(fy){const m=String(fy).match(/^(20\d{2})-(\d{2,4})$/);if(!m)return[];const start=+m[1];return months.map((month,i)=>{const n=i<9?i+4:i-8,y=start+(i>=9?1:0);return{month,period:String(n).padStart(2,"0")+y};});}
-  function renderIdentity(){if(!panel)return;$("gst-name").textContent=identity.name||"Trade name unavailable";$("gst-gstin").textContent=identity.gstin||"GSTIN not detected";$("gst-state").textContent=identity.state;}
-  function populateYears(){const s=$("gst-fy"),old=s.value||localStorage.getItem("gstSelectedFY")||"",ys=years();s.innerHTML=ys.length?ys.map(y=>'<option value="'+esc(y)+'">'+esc(y)+'</option>').join(""):'<option value="">No financial years found</option>';if(ys.includes(old))s.value=old;else if(ys.length)s.value=ys.includes("2025-26")?"2025-26":ys[0];$("gst-refresh").disabled=!s.value;}
-  function saveGeometry(){if(!panel)return;const r=panel.getBoundingClientRect();try{localStorage.setItem("gstPanelGeometry",JSON.stringify({left:r.left,top:r.top,width:r.width,height:r.height}));}catch(_){}}
-  function makePanel(){
-    if(panel?.isConnected)return panel;
-    panel=document.createElement("aside");panel.id="gst-report-panel";
-    panel.innerHTML='<header id="gst-header"><b class="gst-logo">GST</b><span class="gst-brand"><b>GST Report Downloader</b><small>Drag header to move</small></span><button id="gst-dashboard">Dashboard ↗</button><button id="gst-dev-toggle" title="Developer view">⚙</button><button id="gst-min">−</button><button id="gst-close">×</button></header><main id="gst-body"><section class="gst-grid"><div class="gst-identity"><small>TRADE NAME</small><b id="gst-name">Loading taxpayer…</b><div class="gst-meta"><span><small>GSTIN</small><b id="gst-gstin">—</b></span><span><small>STATE</small><b id="gst-state">—</b></span></div></div><div class="gst-year"><label for="gst-fy">FINANCIAL YEAR</label><select id="gst-fy"><option>Loading…</option></select><button id="gst-refresh">Refresh</button></div></section><section id="gst-report" hidden><div class="gst-report-title"><b>GST Returns</b><span id="gst-caption"></span></div><div class="gst-table-wrap"><table><thead><tr><th>Period</th><th>GSTR-3B</th><th>GSTR-1</th><th>GSTR-2A</th></tr></thead><tbody id="gst-rows"></tbody></table></div><p class="gst-note">Only returns marked as filed by the GST Portal can be downloaded.</p></section><section id="gst-dev" hidden><b>Developer diagnostics</b><span id="gst-api-count"></span><pre id="gst-api"></pre></section></main><div id="gst-resize"></div>';
-    const css=document.createElement("style");css.id="gst-css";css.textContent='#gst-report-panel{position:fixed;z-index:2147483647;right:18px;top:85px;width:600px;height:190px;min-width:500px;min-height:165px;max-width:calc(100vw - 12px);max-height:calc(100vh - 12px);display:flex;flex-direction:column;overflow:hidden;background:#fff;color:#111;border:1px solid #111;border-radius:7px;box-shadow:0 7px 24px #0003;font:11px/1.3 Arial,sans-serif}#gst-report-panel *{box-sizing:border-box}#gst-report-panel #gst-header{height:42px;min-height:42px;display:flex;align-items:center;gap:8px;padding:5px 9px;background:#111;color:#fff;cursor:grab;user-select:none;touch-action:none}#gst-report-panel .gst-logo{background:#fff;color:#111;padding:7px 8px;border-radius:4px;font-size:11px}#gst-report-panel .gst-brand{flex:1;min-width:90px}#gst-report-panel .gst-brand b{font-size:11px}#gst-report-panel .gst-brand small{display:block;color:#ddd;font-size:9px}#gst-report-panel button{border:1px solid #111;border-radius:4px;padding:6px 8px;background:#fff;color:#111;cursor:pointer;font-size:10px;font-weight:700}#gst-report-panel #gst-header button{min-width:27px;padding:5px;font-size:12px}#gst-report-panel #gst-header #gst-dashboard{font-size:9px}#gst-report-panel #gst-body{flex:1;min-height:0;overflow:auto;padding:9px}#gst-report-panel .gst-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:10px;align-items:stretch}#gst-report-panel .gst-identity{border:1px solid #bbb;border-radius:5px;padding:8px 10px;min-width:0;display:flex;flex-direction:column;justify-content:center}#gst-report-panel small,#gst-report-panel label{display:block;color:#555;font-size:8px;font-weight:700;margin-bottom:3px}#gst-report-panel .gst-identity> b{font-size:12px;overflow-wrap:anywhere}#gst-report-panel .gst-meta{display:flex;gap:24px;border-top:1px solid #ddd;margin-top:7px;padding-top:6px}#gst-report-panel .gst-meta b{display:block;font-size:10px;overflow-wrap:anywhere}#gst-report-panel .gst-year{display:grid;grid-template-columns:minmax(0,1fr) 86px;gap:7px;align-content:center;align-items:end}#gst-report-panel .gst-year label{grid-column:1/-1;margin:0}#gst-report-panel select{width:100%;height:34px;padding:6px 8px;border:1px solid #777;border-radius:4px;background:#fff;color:#111;font-size:10px}#gst-report-panel #gst-refresh{height:34px;background:#111;color:#fff}#gst-report-panel #gst-refresh:disabled{opacity:.5}#gst-report-panel #gst-report{margin-top:10px}#gst-report-panel .gst-report-title{display:flex;justify-content:space-between;margin:4px 0 6px;font-size:11px}#gst-report-panel .gst-report-title span{font-size:9px;color:#555}#gst-report-panel .gst-table-wrap{max-height:430px;overflow:auto;border:1px solid #aaa;border-radius:4px}#gst-report-panel table{width:100%;border-collapse:collapse;font-size:9px}#gst-report-panel th{position:sticky;top:0;background:#eee;padding:7px 5px;text-align:left;border-bottom:1px solid #aaa}#gst-report-panel td{padding:6px 5px;border-top:1px solid #ddd;white-space:nowrap}#gst-report-panel .gst-period{font-weight:bold}#gst-report-panel .gst-actions{display:flex;gap:4px}#gst-report-panel .gst-actions button{padding:4px 6px;font-size:8px}#gst-report-panel .gst-status{font-size:8px;color:#555}#gst-report-panel .gst-note{font-size:8px;color:#555;margin:6px 0}#gst-report-panel #gst-dev{margin-top:10px;padding-top:8px;border-top:1px solid #aaa;font-size:10px}#gst-report-panel #gst-api-count{float:right;color:#555}#gst-report-panel #gst-api{max-height:250px;overflow:auto;background:#f5f5f5;padding:8px;font:9px monospace;white-space:pre-wrap;overflow-wrap:anywhere}#gst-report-panel #gst-resize{position:absolute;right:2px;bottom:2px;width:17px;height:17px;cursor:nwse-resize;touch-action:none}#gst-report-panel #gst-resize:after{content:"";position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-right:3px solid #111;border-bottom:3px solid #111}#gst-report-panel.gst-min{height:42px!important;min-height:42px!important}#gst-report-panel.gst-min #gst-body,#gst-report-panel.gst-min #gst-resize{display:none}@media(max-width:620px){#gst-report-panel{min-width:0;width:calc(100vw - 12px)!important;left:6px!important;right:auto!important}#gst-report-panel .gst-grid{grid-template-columns:1fr 1fr;gap:6px}#gst-report-panel .gst-year{grid-template-columns:1fr}#gst-report-panel .gst-year label{grid-column:auto}}';
-    if(!document.getElementById("gst-css"))document.documentElement.appendChild(css);document.documentElement.appendChild(panel);
-    try{const g=JSON.parse(localStorage.getItem("gstPanelGeometry")||"null");if(g){panel.style.width=Math.min(g.width||600,innerWidth-12)+"px";panel.style.height=Math.min(g.height||190,innerHeight-12)+"px";panel.style.left=Math.max(0,Math.min(g.left,innerWidth-panel.offsetWidth))+"px";panel.style.top=Math.max(0,Math.min(g.top,innerHeight-48))+"px";panel.style.right="auto";}}catch(_){}
-    const onDashboard=location.hostname==="return.gst.gov.in"&&location.pathname.replace(/\/+$/,"")==="/returns/auth/dashboard";$("gst-dashboard").hidden=onDashboard;$("gst-dashboard").onclick=()=>location.href=DASH;
-    $("gst-dev-toggle").onclick=()=>{$("gst-dev").hidden=!$("gst-dev").hidden;};
-    $("gst-close").onclick=()=>{saveGeometry();panel.remove();panel=null;};
-    $("gst-min").onclick=()=>{const min=panel.classList.toggle("gst-min");$("gst-min").textContent=min?"+":"−";if(!min)panel.style.height=(+localStorage.getItem("gstExpandedHeight")||480)+"px";else localStorage.setItem("gstExpandedHeight",String(panel.offsetHeight));saveGeometry();};
-    $("gst-fy").onchange=()=>{localStorage.setItem("gstSelectedFY",$("gst-fy").value);$("gst-report").hidden=true;rows=[];};
-    $("gst-refresh").onclick=refreshReturns;dragResize();return panel;
+  async function getJson(url) {
+    const response = await fetch(url,{credentials:"include",cache:"no-store",headers:{Accept:"application/json, text/plain, */*"}});
+    const body = await response.text();
+    if (!response.ok) throw new Error("GST Portal returned HTTP " + response.status);
+    try { return JSON.parse(body); } catch (_) { throw new Error("GST Portal returned an unexpected response."); }
   }
-  function dragResize(){
-    const h=$("gst-header");let d=null,r=null;h.addEventListener("pointerdown",e=>{if(e.target.closest("button"))return;const b=panel.getBoundingClientRect();d={x:e.clientX-b.left,y:e.clientY-b.top};h.setPointerCapture(e.pointerId);});h.addEventListener("pointermove",e=>{if(!d)return;panel.style.left=Math.max(0,Math.min(innerWidth-panel.offsetWidth,e.clientX-d.x))+"px";panel.style.top=Math.max(0,Math.min(innerHeight-48,e.clientY-d.y))+"px";panel.style.right="auto";});h.addEventListener("pointerup",()=>{if(d){d=null;saveGeometry();}});h.addEventListener("pointercancel",()=>d=null);
-    const c=$("gst-resize");c.onpointerdown=e=>{e.preventDefault();r={x:e.clientX,y:e.clientY,w:panel.offsetWidth,h:panel.offsetHeight};c.setPointerCapture(e.pointerId);};c.onpointermove=e=>{if(!r)return;panel.style.width=Math.max(500,Math.min(innerWidth-12,r.w+e.clientX-r.x))+"px";panel.style.height=Math.max(165,Math.min(innerHeight-12,r.h+e.clientY-r.y))+"px";};c.onpointerup=()=>{if(r){r=null;saveGeometry();}};c.onpointercancel=()=>r=null;
+  function saveGeometry() {
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    try { localStorage.setItem("gstPanelGeometry",JSON.stringify({left:r.left,top:r.top,width:r.width,height:r.height})); } catch (_) {}
   }
-  function renderDev(){if(!$("gst-api"))return;$("gst-api-count").textContent=apiData.filter(x=>x.ok).length+"/"+apiData.length+" successful";$("gst-api").textContent=apiData.map(x=>x.name+" • "+(x.ok?"200 OK":x.error)+"\n"+JSON.stringify(x.data??{},null,2)).join("\n\n");}
-  function returnList(p){const d=p?.data??p;return(Array.isArray(d?.user)?d.user:[]).flatMap(u=>Array.isArray(u?.returns)?u.returns:[]);}
-  function filing(p,type){const x=returnList(p).find(r=>String(r.return_ty||"").toUpperCase()===type);if(!x)return{filed:false,label:"Status unavailable",raw:""};const s=String(x.status||"").trim().toUpperCase(),filed=["F","FILED","FR","PROCESSED","SUCCESS","SUBMITTED"].includes(s),not=["NF","NOT FILED","NOT_FILED","N","PENDING","DUE"].includes(s);return{filed,label:filed?"Filed":not?"Not filed":x.status||"Status unavailable",raw:s};}
-  async function loadStatuses(list){return Promise.all(list.map(async m=>{try{const data=await json(API+"/rolestatus?rtn_prd="+encodeURIComponent(m.period));return{...m,data,statuses:Object.fromEntries(types.map(t=>[t,filing(data,t)]))};}catch(e){return{...m,error:String(e),statuses:Object.fromEntries(types.map(t=>[t,{filed:false,label:"Status unavailable",raw:""}]))};}}));}
-  function renderRows(){ $("gst-caption").textContent=$("gst-fy").value+" • "+rows.length+" periods";$("gst-rows").innerHTML=rows.map(m=>{const cell=t=>{const s=m.statuses[t];if(!s.filed)return'<span class="gst-status">'+esc(s.label)+'</span>';return'<div class="gst-actions"><button data-type="'+t+'" data-period="'+m.period+'" data-format="JSON">JSON</button>'+(t==="GSTR2A"?'<button data-type="GSTR2A" data-period="'+m.period+'" data-format="EX">EX</button>':"")+'</div>';};return'<tr><td class="gst-period">'+esc(m.month)+'</td><td>'+cell("GSTR3B")+'</td><td>'+cell("GSTR1")+'</td><td>'+cell("GSTR2A")+'</td></tr>';}).join("");$("gst-rows").querySelectorAll("button[data-type]").forEach(b=>b.onclick=()=>download(b.dataset.type,b.dataset.period,b.dataset.format,b));}
-  async function refreshReturns(){if(loading)return;const fy=$("gst-fy").value;if(!fy){alert("Select a financial year.");return;}loading=true;$("gst-refresh").disabled=true;$("gst-refresh").textContent="Loading…";$("gst-report").hidden=false;$("gst-rows").innerHTML='<tr><td colspan="4">Checking filing status for all months…</td></tr>';try{localStorage.setItem("gstSelectedFY",fy);rows=await loadStatuses(fyMonths(fy));renderRows();panel.style.height=Math.min(innerHeight-12,Math.max(panel.offsetHeight,480))+"px";localStorage.setItem("gstExpandedHeight",String(panel.offsetHeight));saveGeometry();}catch(e){$("gst-rows").innerHTML='<tr><td colspan="4">'+esc(e.message)+'</td></tr>';}finally{loading=false;$("gst-refresh").disabled=false;$("gst-refresh").textContent="Refresh";}}
-  function findUrl(v){let out="";walk(v,x=>{if(typeof x==="string"&&/^https?:\/\//i.test(x)&&(/files\.gst\.gov\.in|download|\.zip(?:\?|$)/i.test(x)))out=x;});return out;}
-  function trigger(blob,name){const u=URL.createObjectURL(blob),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),30000);}
-  async function saveFile(res,type,period,format){const ct=res.headers.get("content-type")||"",disp=res.headers.get("content-disposition")||"",fm=disp.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);let name=fm?decodeURIComponent(fm[1].replace(/"/g,"")):"GST_"+type+"_"+period+(format==="EX"?".xlsx":".zip");if(ct.includes("json")||ct.includes("text/plain")){const text=await res.text();let data;try{data=JSON.parse(text);}catch(_){data=null;}if(!data)throw Error("Unexpected portal response: "+text.slice(0,220));if(data.status===0||data.error)throw Error(data.message||data.error||"Report generation failed.");const url=findUrl(data);if(url){const r=await fetch(url,{credentials:"include",cache:"no-store"});if(!r.ok)throw Error("File URL failed: HTTP "+r.status);return saveFile(r,type,period,format);}trigger(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),name.replace(/\.zip$/,".json"));return;}const blob=await res.blob();if(!blob.size)throw Error("The portal returned an empty file.");if(ct.includes("zip"))name=name.replace(/\.(json|xlsx?)$/i,".zip");trigger(blob,name);}
-  async function download(type,period,format,button){if(downloading)return;const row=rows.find(x=>x.period===period),s=row?.statuses?.[type];if(!s?.filed){alert("This return is not marked as filed by the GST Portal.");return;}downloading=true;const label=button.textContent;button.disabled=true;button.textContent="…";try{const p=new URLSearchParams({rtn_prd:period,rtn_typ:type,flag:"0"});if(format==="EX")p.set("file_type","EX");const gen=await fetch(API+"/offline/download/generate?"+p,{credentials:"include",cache:"no-store",headers:{Accept:"application/json, text/plain, */*"}});if(!gen.ok)throw Error("Generate request failed: HTTP "+gen.status);const txt=await gen.text();let gd;try{gd=JSON.parse(txt);}catch(_){gd=txt;}if(gd&&typeof gd==="object"&&(gd.status===0||gd.error))throw Error(gd.message||gd.error||"Portal could not generate report.");const q=new URLSearchParams({rtn_prd:period,rtn_typ:type,file_num:"1"});if(format==="EX")q.set("file_type","EX");const file=await fetch(API+"/offline/download/url?"+q,{credentials:"include",cache:"no-store",headers:{Accept:"application/octet-stream, application/zip, application/json, */*"}});if(!file.ok)throw Error("Download request failed: HTTP "+file.status);await saveFile(file,type,period,format);button.textContent="Done";}catch(e){button.textContent=label;alert("GST download failed ("+type+" "+period+"):\n"+e.message);}finally{button.disabled=false;downloading=false;}}
-  async function init(){if(!["return.gst.gov.in","services.gst.gov.in"].includes(location.hostname))return;makePanel();await loadProfile();renderIdentity();}
-  chrome.runtime.onMessage.addListener((m,s,reply)=>{if(m?.type==="GST_TOGGLE_PANEL"){if(panel?.isConnected){saveGeometry();panel.remove();panel=null;reply({ok:true,visible:false});}else{makePanel();loadProfile();reply({ok:true,visible:true});}return true;}if(m?.type==="GST_REFRESH_PANEL"){if(!panel?.isConnected)makePanel();loadProfile().then(refreshReturns);reply({ok:true});return true;}});
-  init().catch(e=>console.error("GST Report Downloader",e));
+  function pageMode() {
+    if (isAccessDenied()) return "login";
+    if (!isDashboard()) return "dashboard";
+    return "user";
+  }
+  function makePanel() {
+    if (panel && panel.isConnected) return panel;
+    panel = document.createElement("aside");
+    panel.id = "gst-report-panel";
+    panel.innerHTML =
+      '<header id="gst-header"><b class="gst-logo">GST</b><span class="gst-brand"><b>GST Report Downloader</b><small>Drag header to move</small></span><button id="gst-dev-toggle" title="Developer view" aria-label="Developer view">⚙</button><button id="gst-min" title="Minimise">−</button><button id="gst-close" title="Close">×</button></header>' +
+      '<main id="gst-body">' +
+        '<section id="gst-gate" hidden><div class="gst-gate-title" id="gst-gate-title"></div><p id="gst-gate-copy"></p><button id="gst-gate-action" class="gst-primary"></button></section>' +
+        '<section id="gst-user-page">' +
+          '<div class="gst-grid">' +
+            '<div class="gst-identity"><small>TRADE NAME</small><b id="gst-name">Loading taxpayer…</b><div class="gst-meta"><span><small>GSTIN</small><b id="gst-gstin">—</b></span><span><small>STATE</small><b id="gst-state">—</b></span></div></div>' +
+            '<div class="gst-year"><label for="gst-fy">FINANCIAL YEAR</label><select id="gst-fy"><option value="">Loading…</option></select><button id="gst-refresh" class="gst-primary">Refresh</button></div>' +
+          '</div>' +
+          '<section id="gst-report" hidden><div class="gst-report-title"><b>GST Returns</b><span id="gst-caption"></span></div><div class="gst-table-wrap"><table><thead><tr><th>Period</th><th>GSTR-3B</th><th>GSTR-1</th><th>GSTR-2A</th></tr></thead><tbody id="gst-rows"></tbody></table></div><p class="gst-note">Only returns marked as filed by the GST Portal can be downloaded.</p></section>' +
+        '</section>' +
+        '<section id="gst-dev-page" hidden><div class="gst-dev-head"><b>Developer diagnostics</b><button id="gst-user-back">Back to User</button></div><div id="gst-api-count"></div><pre id="gst-api"></pre></section>' +
+      '</main><div id="gst-resize"></div>';
+
+    const css = document.createElement("style");
+    css.id = "gst-css";
+    css.textContent =
+      '#gst-report-panel{position:fixed;z-index:2147483647;right:18px;top:85px;width:650px;height:210px;min-width:500px;min-height:170px;max-width:calc(100vw - 12px);max-height:calc(100vh - 12px);display:flex;flex-direction:column;overflow:hidden;background:#fff;color:#111;border:1px solid #111;border-radius:7px;box-shadow:0 7px 24px #0003;font:11px/1.3 Arial,sans-serif}' +
+      '#gst-report-panel *{box-sizing:border-box}' +
+      '#gst-report-panel #gst-header{height:40px;min-height:40px;display:flex;align-items:center;gap:8px;padding:5px 9px;background:#111;color:#fff;cursor:grab;user-select:none;touch-action:none}' +
+      '#gst-report-panel .gst-logo{background:#fff;color:#111;padding:7px 8px;border-radius:4px;font-size:11px}' +
+      '#gst-report-panel .gst-brand{flex:1;min-width:90px}#gst-report-panel .gst-brand b{font-size:11px}#gst-report-panel .gst-brand small{display:block;color:#ddd;font-size:9px}' +
+      '#gst-report-panel button{border:1px solid #111;border-radius:4px;padding:7px 9px;background:#fff;color:#111;cursor:pointer;font-size:10px;font-weight:700}' +
+      '#gst-report-panel #gst-header button{min-width:28px;padding:5px;font-size:12px}' +
+      '#gst-report-panel #gst-body{flex:1;min-height:0;overflow:auto;padding:9px}' +
+      '#gst-report-panel .gst-grid{display:grid;grid-template-columns:1.2fr .9fr;gap:10px;align-items:stretch}' +
+      '#gst-report-panel .gst-identity{border:1px solid #aaa;border-radius:5px;padding:8px 10px;min-width:0;display:flex;flex-direction:column;justify-content:center}' +
+      '#gst-report-panel small,#gst-report-panel label{display:block;color:#555;font-size:8px;font-weight:700;margin-bottom:3px}' +
+      '#gst-report-panel .gst-identity>b{font-size:12px;overflow-wrap:anywhere}' +
+      '#gst-report-panel .gst-meta{display:flex;gap:24px;border-top:1px solid #ddd;margin-top:7px;padding-top:6px}#gst-report-panel .gst-meta b{display:block;font-size:10px;overflow-wrap:anywhere}' +
+      '#gst-report-panel .gst-year{display:flex;flex-direction:column;justify-content:center;gap:7px;min-width:0}#gst-report-panel .gst-year label{margin:0}' +
+      '#gst-report-panel select{width:100%;height:34px;padding:6px 8px;border:1px solid #777;border-radius:4px;background:#fff;color:#111;font-size:10px}' +
+      '#gst-report-panel .gst-primary{width:100%;height:34px;background:#111;color:#fff}#gst-report-panel button:disabled{opacity:.5;cursor:wait}' +
+      '#gst-report-panel #gst-report{margin-top:10px}#gst-report-panel .gst-report-title{display:flex;justify-content:space-between;margin:4px 0 6px;font-size:11px}#gst-report-panel .gst-report-title span{font-size:9px;color:#555}' +
+      '#gst-report-panel .gst-table-wrap{max-height:430px;overflow:auto;border:1px solid #aaa;border-radius:4px}#gst-report-panel table{width:100%;border-collapse:collapse;font-size:9px}' +
+      '#gst-report-panel th{position:sticky;top:0;background:#eee;padding:7px 5px;text-align:left;border-bottom:1px solid #aaa}#gst-report-panel td{padding:6px 5px;border-top:1px solid #ddd;white-space:nowrap}' +
+      '#gst-report-panel .gst-period{font-weight:bold}#gst-report-panel .gst-actions{display:flex;gap:4px}#gst-report-panel .gst-actions button{padding:4px 6px;font-size:8px}' +
+      '#gst-report-panel .gst-status{font-size:8px;color:#555}#gst-report-panel .gst-status.filed{font-weight:bold;color:#111}#gst-report-panel .gst-note{font-size:8px;color:#555;margin:6px 0}' +
+      '#gst-report-panel #gst-gate{height:100%;min-height:120px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:9px;padding:8px 5px}#gst-report-panel #gst-gate[hidden]{display:none}#gst-report-panel .gst-gate-title{font-size:14px;font-weight:700}#gst-report-panel #gst-gate-copy{font-size:10px;color:#555;margin:0}#gst-report-panel #gst-gate-action{max-width:230px}' +
+      '#gst-report-panel #gst-dev-page{font-size:10px}#gst-report-panel .gst-dev-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}#gst-report-panel #gst-api-count{font-size:9px;color:#555;margin-bottom:6px}#gst-report-panel #gst-api{max-height:350px;overflow:auto;background:#f5f5f5;border:1px solid #ddd;padding:8px;font:9px monospace;white-space:pre-wrap;overflow-wrap:anywhere}' +
+      '#gst-report-panel #gst-resize{position:absolute;right:2px;bottom:2px;width:17px;height:17px;cursor:nwse-resize;touch-action:none}#gst-report-panel #gst-resize:after{content:"";position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-right:3px solid #111;border-bottom:3px solid #111}' +
+      '#gst-report-panel.gst-min{height:40px!important;min-height:40px!important}#gst-report-panel.gst-min #gst-body,#gst-report-panel.gst-min #gst-resize{display:none}' +
+      '@media(max-width:620px){#gst-report-panel{min-width:0;width:calc(100vw - 12px)!important;left:6px!important;right:auto!important}#gst-report-panel .gst-grid{grid-template-columns:1fr 1fr;gap:6px}#gst-report-panel .gst-meta{gap:10px}}';
+    if (!document.getElementById("gst-css")) document.documentElement.appendChild(css);
+    document.documentElement.appendChild(panel);
+    try {
+      const g = JSON.parse(localStorage.getItem("gstPanelGeometry") || "null");
+      if (g) {
+        panel.style.width = Math.min(g.width || 650,innerWidth-12) + "px";
+        panel.style.height = Math.min(g.height || 210,innerHeight-12) + "px";
+        panel.style.left = Math.max(0,Math.min(g.left,innerWidth-panel.offsetWidth)) + "px";
+        panel.style.top = Math.max(0,Math.min(g.top,innerHeight-48)) + "px";
+        panel.style.right = "auto";
+      }
+    } catch (_) {}
+    bindPanel();
+    applyPageMode();
+    return panel;
+  }
+  function bindPanel() {
+    $("gst-dev-toggle").onclick = () => showDeveloper(true);
+    $("gst-user-back").onclick = () => showDeveloper(false);
+    $("gst-close").onclick = () => { saveGeometry(); panel.remove(); panel = null; };
+    $("gst-min").onclick = () => {
+      const minimized = panel.classList.toggle("gst-min");
+      $("gst-min").textContent = minimized ? "+" : "−";
+      if (!minimized) panel.style.height = (Number(localStorage.getItem("gstExpandedHeight")) || 480) + "px";
+      else localStorage.setItem("gstExpandedHeight",String(panel.offsetHeight));
+      saveGeometry();
+    };
+    $("gst-gate-action").onclick = () => { location.href = isAccessDenied() ? LOGIN : DASH; };
+    $("gst-fy").onchange = () => {
+      localStorage.setItem("gstSelectedFY",$("gst-fy").value);
+      $("gst-report").hidden = true;
+      rows = [];
+    };
+    $("gst-refresh").onclick = refreshReturns;
+    bindDragResize();
+  }
+  function applyPageMode() {
+    if (!panel) return;
+    const mode = pageMode();
+    $("gst-gate").hidden = mode === "user";
+    $("gst-user-page").hidden = mode !== "user";
+    $("gst-dev-toggle").hidden = mode !== "user";
+    $("gst-dev-page").hidden = true;
+    if (mode === "login") {
+      $("gst-gate-title").textContent = "GST Portal session expired";
+      $("gst-gate-copy").textContent = "Sign in to the GST Portal, then open the Returns dashboard.";
+      $("gst-gate-action").textContent = "Go to Login";
+    } else if (mode === "dashboard") {
+      $("gst-gate-title").textContent = "Continue to GST Returns";
+      $("gst-gate-copy").textContent = "Open the Returns dashboard to load taxpayer details and return filing status.";
+      $("gst-gate-action").textContent = "Go to Dashboard";
+    } else {
+      $("gst-dev-toggle").hidden = false;
+    }
+  }
+  function showDeveloper(show) {
+    $("gst-user-page").hidden = show;
+    $("gst-dev-page").hidden = !show;
+    $("gst-gate").hidden = true;
+    if (show) renderDeveloper();
+  }
+  function bindDragResize() {
+    const header = $("gst-header");
+    let drag = null, resize = null;
+    header.addEventListener("pointerdown",e => {
+      if (e.target.closest("button")) return;
+      const r = panel.getBoundingClientRect();
+      drag = {x:e.clientX-r.left,y:e.clientY-r.top};
+      header.setPointerCapture(e.pointerId);
+    });
+    header.addEventListener("pointermove",e => {
+      if (!drag) return;
+      panel.style.left = Math.max(0,Math.min(innerWidth-panel.offsetWidth,e.clientX-drag.x)) + "px";
+      panel.style.top = Math.max(0,Math.min(innerHeight-48,e.clientY-drag.y)) + "px";
+      panel.style.right = "auto";
+    });
+    header.addEventListener("pointerup",() => { if (drag) { drag=null; saveGeometry(); } });
+    header.addEventListener("pointercancel",() => drag=null);
+    const grip = $("gst-resize");
+    grip.onpointerdown = e => { e.preventDefault(); resize={x:e.clientX,y:e.clientY,w:panel.offsetWidth,h:panel.offsetHeight};grip.setPointerCapture(e.pointerId); };
+    grip.onpointermove = e => {
+      if (!resize) return;
+      panel.style.width = Math.max(500,Math.min(innerWidth-12,resize.w+e.clientX-resize.x)) + "px";
+      panel.style.height = Math.max(170,Math.min(innerHeight-12,resize.h+e.clientY-resize.y)) + "px";
+    };
+    grip.onpointerup = () => { if (resize) { resize=null;saveGeometry(); } };
+    grip.onpointercancel = () => resize=null;
+  }
+  function collectYears(data) {
+    const found = new Set();
+    walk(data,v => {
+      if (typeof v === "string") {
+        const matches = v.match(/\b20\d{2}\s*[-–]\s*\d{2,4}\b/g) || [];
+        matches.forEach(x => found.add(x.replace(/\s/g,"").replace("–","-")));
+      }
+    });
+    return Array.from(found).sort((a,b) => Number(b.slice(0,4))-Number(a.slice(0,4)));
+  }
+  async function loadProfile() {
+    const requests = [
+      {name:"ustatus",url:API+"/ustatus"},
+      {name:"dropdown",url:API+"/dropdown"}
+    ];
+    const results = await Promise.allSettled(requests.map(async item => ({name:item.name,url:item.url,data:await getJson(item.url),ok:true})));
+    apiData = results.map((r,i) => r.status === "fulfilled" ? r.value : {name:requests[i].name,url:requests[i].url,ok:false,error:String(r.reason)});
+    const statusRecord = apiData.find(x => x.name === "ustatus" && x.ok);
+    const profile = statusRecord && statusRecord.data && typeof statusRecord.data === "object" ? statusRecord.data : {};
+    let gstin = String(profile.gstin || "").trim().toUpperCase();
+    if (!/^[0-9A-Z]{15}$/.test(gstin)) gstin = "";
+    const code = String(profile.stcd || gstin.slice(0,2) || "").padStart(2,"0");
+    identity = {name:String(profile.bname || "").trim(),gstin,state:states[code] || "—"};
+    renderIdentity();
+    populateYears();
+    renderDeveloper();
+  }
+  function renderIdentity() {
+    if (!panel || !isDashboard()) return;
+    $("gst-name").textContent = identity.name || "Trade name unavailable";
+    $("gst-gstin").textContent = identity.gstin || "GSTIN not detected";
+    $("gst-state").textContent = identity.state || "—";
+  }
+  function populateYears() {
+    if (!panel || !isDashboard()) return;
+    const select = $("gst-fy");
+    const old = localStorage.getItem("gstSelectedFY") || "";
+    const dropdown = apiData.find(x => x.name === "dropdown" && x.ok);
+    let list = dropdown ? collectYears(dropdown.data) : [];
+    if (!list.length) {
+      list = Array.from(document.querySelectorAll("select option")).map(o => o.value || o.textContent.trim()).filter(x => /^20\d{2}-\d{2,4}$/.test(x));
+      list = Array.from(new Set(list)).sort((a,b) => Number(b.slice(0,4))-Number(a.slice(0,4)));
+    }
+    select.innerHTML = list.length ? list.map(y => '<option value="' + esc(y) + '">' + esc(y) + '</option>').join("") : '<option value="">Financial years unavailable</option>';
+    if (list.includes(old)) select.value = old;
+    else if (list.length) select.value = list[0];
+    $("gst-refresh").disabled = !select.value;
+  }
+  function fyMonths(fy) {
+    const match = String(fy).match(/^(20\d{2})-(\d{2,4})$/);
+    if (!match) return [];
+    const start = Number(match[1]);
+    return months.map((month,i) => {
+      const monthNumber = i < 9 ? i + 4 : i - 8;
+      const year = start + (i >= 9 ? 1 : 0);
+      return {month,monthIndex:i,period:String(monthNumber).padStart(2,"0") + year};
+    });
+  }
+  function returnList(response) {
+    const data = response && response.data ? response.data : response;
+    return (Array.isArray(data && data.user) ? data.user : []).flatMap(user => Array.isArray(user.returns) ? user.returns : []);
+  }
+  function filing(response,type) {
+    const record = returnList(response).find(item => String(item.return_ty || "").toUpperCase() === type);
+    if (!record) return {filed:false,label:"Status unavailable"};
+    const status = String(record.status || "").trim().toUpperCase();
+    const filed = ["F","FIL","FILED","FR","PROCESSED","SUCCESS","SUBMITTED"].includes(status);
+    const notFiled = ["NF","NOT FILED","NOT_FILED","N","PENDING","DUE"].includes(status);
+    return {filed,label:filed ? "Filed" : notFiled ? "Not filed" : String(record.status || "Status unavailable")};
+  }
+  async function loadStatuses(periods) {
+    return Promise.all(periods.map(async period => {
+      try {
+        const data = await getJson(API + "/rolestatus?rtn_prd=" + encodeURIComponent(period.period));
+        return Object.assign({},period,{statuses:Object.fromEntries(returnTypes.map(type => [type,filing(data,type)]))});
+      } catch (error) {
+        return Object.assign({},period,{error:String(error),statuses:Object.fromEntries(returnTypes.map(type => [type,{filed:false,label:"Status unavailable"}]))});
+      }
+    }));
+  }
+  function renderRows() {
+    $("gst-caption").textContent = $("gst-fy").value + " • " + rows.length + " periods";
+    $("gst-rows").innerHTML = rows.map(row => {
+      const cell = type => {
+        const result = row.statuses[type];
+        if (!result.filed) return '<span class="gst-status">' + esc(result.label) + '</span>';
+        if (type === "GSTR3B") return '<span class="gst-status filed">Filed</span>';
+        return '<div class="gst-actions"><button data-type="' + type + '" data-period="' + row.period + '" data-format="JSON">JSON</button>' +
+          (type === "GSTR2A" ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="EX">EX</button>' : "") + '</div>';
+      };
+      return '<tr><td class="gst-period">' + esc(row.month) + '</td><td>' + cell("GSTR3B") + '</td><td>' + cell("GSTR1") + '</td><td>' + cell("GSTR2A") + '</td></tr>';
+    }).join("");
+    $("gst-rows").querySelectorAll("button[data-type]").forEach(button => {
+      button.onclick = () => download(button.dataset.type,button.dataset.period,button.dataset.format,button);
+    });
+  }
+  async function refreshReturns() {
+    if (loading) return;
+    const fy = $("gst-fy").value;
+    if (!fy) { alert("Select a financial year."); return; }
+    loading = true;
+    $("gst-refresh").disabled = true;
+    $("gst-refresh").textContent = "Loading…";
+    $("gst-report").hidden = false;
+    $("gst-rows").innerHTML = '<tr><td colspan="4">Checking filing status for all 12 months…</td></tr>';
+    try {
+      localStorage.setItem("gstSelectedFY",fy);
+      rows = await loadStatuses(fyMonths(fy));
+      renderRows();
+      panel.style.height = Math.min(innerHeight-12,Math.max(panel.offsetHeight,480)) + "px";
+      localStorage.setItem("gstExpandedHeight",String(panel.offsetHeight));
+      saveGeometry();
+    } catch (error) {
+      $("gst-rows").innerHTML = '<tr><td colspan="4">' + esc(error.message) + '</td></tr>';
+    } finally {
+      loading = false;
+      $("gst-refresh").disabled = false;
+      $("gst-refresh").textContent = "Refresh";
+    }
+  }
+  function findDownloadUrl(value) {
+    let found = "";
+    walk(value,item => {
+      if (typeof item === "string" && /^https?:\/\//i.test(item) && (/files\.gst\.gov\.in|download|\.zip(?:\?|$)/i.test(item))) found = item;
+    });
+    return found;
+  }
+  function saveBlob(blob,name) {
+    if (!blob || !blob.size) throw new Error("GST Portal returned an empty file.");
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url),30000);
+  }
+  async function consumeFileResponse(response,type,period,format) {
+    const contentType = response.headers.get("content-type") || "";
+    const disposition = response.headers.get("content-disposition") || "";
+    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    let filename = filenameMatch ? decodeURIComponent(filenameMatch[1].replace(/"/g,"")) : "GST_" + type + "_" + period + (format === "EX" ? ".zip" : ".zip");
+    if (contentType.includes("json") || contentType.includes("text/plain")) {
+      const text = await response.text();
+      let payload;
+      try { payload = JSON.parse(text); } catch (_) { throw new Error("Unexpected download response: " + text.slice(0,180)); }
+      if (payload.status === 0 || payload.error) throw new Error(payload.message || payload.error || "GST report generation failed.");
+      const url = findDownloadUrl(payload);
+      if (url) {
+        const fileResponse = await fetch(url,{credentials:"include",cache:"no-store"});
+        if (!fileResponse.ok) throw new Error("GST file URL returned HTTP " + fileResponse.status);
+        return consumeFileResponse(fileResponse,type,period,format);
+      }
+      saveBlob(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}),filename.replace(/\.zip$/i,".json"));
+      return;
+    }
+    const blob = await response.blob();
+    if (/zip/i.test(contentType) && !/\.zip$/i.test(filename)) filename += ".zip";
+    else if (/spreadsheet|excel|officedocument/i.test(contentType) && !/\.(xlsx|xls)$/i.test(filename)) filename += ".xlsx";
+    saveBlob(blob,filename);
+  }
+  async function download(type,period,format,button) {
+    if (downloading) return;
+    downloading = true;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "…";
+    try {
+      // Recheck the live filing status immediately before generating the report.
+      const latest = await getJson(API + "/rolestatus?rtn_prd=" + encodeURIComponent(period));
+      if (!filing(latest,type).filed) throw new Error("GST Portal does not currently mark this return as Filed. Download stopped.");
+      const params = new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:type});
+      if (format === "EX") params.set("file_type","EX");
+      const generate = await fetch(API + "/offline/download/generate?" + params.toString(),{
+        credentials:"include",cache:"no-store",headers:{Accept:"application/json, text/plain, */*"}
+      });
+      if (!generate.ok) throw new Error("Report generation returned HTTP " + generate.status);
+      const generatedText = await generate.text();
+      let generated;
+      try { generated = JSON.parse(generatedText); } catch (_) { throw new Error("Unexpected generation response: " + generatedText.slice(0,180)); }
+      if (generated && (generated.status === 0 || generated.error)) throw new Error(generated.message || generated.error || "GST Portal could not generate this report.");
+      const fileParams = new URLSearchParams({rtn_prd:period,rtn_typ:type,file_num:"1"});
+      if (format === "EX") fileParams.set("file_type","EX");
+      const fileResponse = await fetch(API + "/offline/download/url?" + fileParams.toString(),{
+        credentials:"include",cache:"no-store",headers:{Accept:"application/octet-stream, application/zip, application/json, */*"}
+      });
+      if (!fileResponse.ok) throw new Error("Report download returned HTTP " + fileResponse.status);
+      await consumeFileResponse(fileResponse,type,period,format);
+      button.textContent = "Done";
+    } catch (error) {
+      button.textContent = original;
+      alert("GST download failed (" + type + " " + period + "):\n" + error.message);
+    } finally {
+      button.disabled = false;
+      downloading = false;
+    }
+  }
+  async function init() {
+    if (!isPortalDomain()) return;
+    makePanel();
+    if (isDashboard()) {
+      await loadProfile();
+      renderIdentity();
+    }
+  }
+  chrome.runtime.onMessage.addListener((message,sender,reply) => {
+    if (message && message.type === "GST_TOGGLE_PANEL") {
+      if (panel && panel.isConnected) { saveGeometry();panel.remove();panel=null;reply({ok:true,visible:false}); }
+      else { makePanel();if (isDashboard()) loadProfile();reply({ok:true,visible:true}); }
+      return true;
+    }
+    if (message && message.type === "GST_REFRESH_PANEL") {
+      if (!panel || !panel.isConnected) makePanel();
+      if (isDashboard()) loadProfile().then(refreshReturns);
+      reply({ok:true});
+      return true;
+    }
+  });
+  init().catch(error => console.error("GST Report Downloader:",error));
 })();
