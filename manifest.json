@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GST Report Downloader",
-  "version": "0.3.0",
-  "description": "Compact GST Portal report popup.",
+  "version": "0.4.0",
+  "description": "Draggable GST Portal report panel with authenticated dashboard data.",
   "permissions": [
     "activeTab",
     "tabs",
@@ -14,8 +14,7 @@
     "https://services.gst.gov.in/*"
   ],
   "action": {
-    "default_title": "GST Report Downloader",
-    "default_popup": "popup.html"
+    "default_title": "Open or close movable GST Report Downloader"
   },
   "content_scripts": [
     {
@@ -28,5 +27,8 @@
       ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "background": {
+    "service_worker": "service_worker.js"
+  }
 }
