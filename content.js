@@ -319,37 +319,93 @@
     if (!result || !result.ok) throw new Error(result && result.error ? result.error : "Chrome could not start the download.");
     return result.downloadId;
   }
+  async function callGstApi(url,label) {
+    const response = await fetch(url,{
+      method:"GET",
+      credentials:"include",
+      cache:"no-store",
+      headers:{Accept:"application/json, text/plain, */*"}
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(label + " failed (HTTP " + response.status + ").");
+    if (/^\\s*<!doctype html|^\\s*<html/i.test(text)) {
+      throw new Error(label + " returned an HTML page instead of API data. The GST session may have expired.");
+    }
+    try { return JSON.parse(text); }
+    catch (_) { return text; }
+  }
+  async function downloadGstr1Json(period,button) {
+    // GST's supported GSTR-1 offline workflow: status -> upload summary ->
+    // save/validate -> generate -> obtain the authenticated download redirect.
+    const statusUrl = API + "/rolestatus?rtn_prd=" + encodeURIComponent(period);
+    const statusData = await callGstApi(statusUrl,"GSTR-1 filing status");
+    if (!filing(statusData,"GSTR1").filed) {
+      throw new Error("GSTR-1 for " + period + " is not marked Filed by the GST Portal. Download stopped.");
+    }
+    button.textContent = "Summary…";
+    const summaryUrl = API + "/offline/upload/summary?" +
+      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"}).toString();
+    const summaryData = await callGstApi(summaryUrl,"GSTR-1 offline summary");
+
+    button.textContent = "Validate…";
+    const validateUrl = API + "/gstr/save/valid?" +
+      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"}).toString();
+    const validationData = await callGstApi(validateUrl,"GSTR-1 save/validation");
+
+    button.textContent = "Generate…";
+    const generateUrl = API + "/offline/download/generate?" +
+      new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:"GSTR1"}).toString();
+    const generatedData = await callGstApi(generateUrl,"GSTR-1 JSON generation");
+
+    // The GST portal's generate endpoint prepares the offline file. The observed
+    // portal flow then exposes it through /offline/download/url, which responds
+    // with an authenticated redirect to files.gst.gov.in. Let Chrome Downloads
+    // follow that redirect; do not fetch the cross-origin ZIP from content.js.
+    button.textContent = "Downloading…";
+    const downloadUrl = API + "/offline/download/url?" +
+      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1",file_num:"1"}).toString();
+    const filename = "GSTR1_" + period + "_JSON.zip";
+    await startNativeDownload(downloadUrl,filename);
+
+    apiData = apiData.filter(x => !["gstr1-status","gstr1-summary","gstr1-validation","gstr1-generate"].includes(x.name));
+    apiData.push(
+      {name:"gstr1-status",url:statusUrl,ok:true,data:statusData},
+      {name:"gstr1-summary",url:summaryUrl,ok:true,data:summaryData},
+      {name:"gstr1-validation",url:validateUrl,ok:true,data:validationData},
+      {name:"gstr1-generate",url:generateUrl,ok:true,data:generatedData}
+    );
+    renderDeveloper();
+  }
   async function download(type,period,format,button) {
     if (downloading) return;
     downloading = true;
     const original = button.textContent;
     button.disabled = true;
-    button.textContent = "…";
+    button.textContent = "Checking…";
     try {
-      // Recheck the live filing status immediately before generating the report.
-      const latest = await getJson(API + "/rolestatus?rtn_prd=" + encodeURIComponent(period));
-      if (!filing(latest,type).filed) throw new Error("GST Portal does not currently mark this return as Filed. Download stopped.");
-      const params = new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:type});
-      if (format === "EX") params.set("file_type","EX");
-      const generate = await fetch(API + "/offline/download/generate?" + params.toString(),{
-        credentials:"include",cache:"no-store",headers:{Accept:"application/json, text/plain, */*"}
-      });
-      if (!generate.ok) throw new Error("Report generation returned HTTP " + generate.status);
-      const generatedText = await generate.text();
-      let generated;
-      try { generated = JSON.parse(generatedText); } catch (_) { throw new Error("Unexpected generation response: " + generatedText.slice(0,180)); }
-      if (generated && (generated.status === 0 || generated.error)) throw new Error(generated.message || generated.error || "GST Portal could not generate this report.");
-      const fileParams = new URLSearchParams({rtn_prd:period,rtn_typ:type,file_num:"1"});
-      if (format === "EX") fileParams.set("file_type","EX");
-      // Do not fetch the files.gst.gov.in redirect in page context: it is cross-origin
-      // and is blocked by CORS. Chrome Downloads follows the authenticated GST redirect.
-      const downloadUrl = API + "/offline/download/url?" + fileParams.toString();
-      const filename = "GST_" + type + "_" + period + (format === "EX" ? "_Excel.zip" : ".zip");
-      await startNativeDownload(downloadUrl,filename);
+      if (type === "GSTR1" && format === "JSON") {
+        await downloadGstr1Json(period,button);
+      } else {
+        // Keep the existing download flow for other return types/formats.
+        const latest = await getJson(API + "/rolestatus?rtn_prd=" + encodeURIComponent(period));
+        if (!filing(latest,type).filed) throw new Error("GST Portal does not currently mark this return as Filed. Download stopped.");
+        const params = new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:type});
+        if (format === "EX") params.set("file_type","EX");
+        const generate = await fetch(API + "/offline/download/generate?" + params.toString(),{
+          credentials:"include",cache:"no-store",headers:{Accept:"application/json, text/plain, */*"}
+        });
+        if (!generate.ok) throw new Error("Report generation returned HTTP " + generate.status);
+        await generate.text();
+        const fileParams = new URLSearchParams({rtn_prd:period,rtn_typ:type,file_num:"1"});
+        if (format === "EX") fileParams.set("file_type","EX");
+        const downloadUrl = API + "/offline/download/url?" + fileParams.toString();
+        const filename = "GST_" + type + "_" + period + (format === "EX" ? "_Excel.zip" : ".zip");
+        await startNativeDownload(downloadUrl,filename);
+      }
       button.textContent = "Started";
     } catch (error) {
       button.textContent = original;
-      alert("GST download failed (" + type + " " + period + "):\n" + error.message);
+      alert("GST download failed (" + type + " " + period + "):\\n" + error.message);
     } finally {
       button.disabled = false;
       downloading = false;
