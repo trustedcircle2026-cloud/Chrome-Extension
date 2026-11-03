@@ -1,25 +1,22 @@
 # GST Report Downloader
 
-Chrome Manifest V3 starter for the GST Portal. The extension popup scans visible return-period rows and can activate clearly labelled controls in the currently open GST Portal tab.
+Chrome Manifest V3 extension for reading GST Portal taxpayer details and return filing status from an already authenticated portal tab.
 
-## Install locally
-1. Download or clone this repository.
-2. Open `chrome://extensions`.
-3. Enable Developer mode.
-4. Click **Load unpacked** and choose the repository folder (the folder containing `manifest.json`).
-5. Sign in to GST Portal normally and open the returns/download page.
-6. Click the extension, choose return type, year, period and format preference, then Refresh periods.
+## Install
+1. Clone this repository.
+2. Open chrome://extensions and enable Developer mode.
+3. Select Load unpacked and choose the folder containing manifest.json.
+4. Sign in to GST Portal normally.
 
-## Current integration stage
-This is a UI-driven integration scaffold, not a verified end-to-end GST report downloader. The content script scans visible HTML table rows and only clicks controls that it can identify by visible labels. GST Portal markup/navigation can differ by return and may require manual navigation to a specific return's download screen. The extension does not claim a file is downloaded just because a control was clicked.
+## Full report centre
+Click the extension icon, then **Open full report dashboard**. This opens a separate extension page that reads the currently open GST Portal tab and displays a monthly return register with GSTR-1, GSTR-3B, GSTR-2A and GSTR-2B filing-status columns.
 
-The financial-year/quarter and output-format preferences are currently captured in the UI but are not yet used to navigate the portal selector or convert files. The portal's offered formats are authoritative. JSON and Excel/CSV support must be wired to the exact portal actions for each return. GSTR-2A and GSTR-2B are listed in the UI, but their return-specific workflows still need validation.
+## Current limitations
+- The portal's visible page is the source of truth. Trade name may not be present on the Returns dashboard; if absent, open the taxpayer Welcome page and refresh.
+- Monthly period/status detection supports common tables, row-based cards and visible calendar text, but GST Portal markup varies by page and filing year. Validate results against the portal.
+- Download controls are not yet wired to verified report-specific workflows. The dashboard does not claim a report has been downloaded merely because a portal action was seen.
+- FY selection is currently a display/filter setting; select the same FY on the GST Portal before refreshing.
+- No passwords, OTPs, cookies or authentication tokens are stored. The extension does not bypass CAPTCHA or other portal security.
 
-## Next implementation steps
-- Inspect actual GST Portal DOM and return-specific routes for GSTR-1, GSTR-3B, GSTR-2A and GSTR-2B.
-- Wire year/period selectors using verified selectors.
-- Add download completion tracking using chrome.downloads.
-- Add safe retry logic, sequential queue and downloadable history.
-- Verify whether each report offers JSON, Excel, CSV or another format.
-
-Never store GST passwords, OTPs, session cookies or other authentication secrets. Do not bypass captcha or security checks.
+## Next validation
+Capture the GST Portal Returns Calendar page and the actual GSTR-1 / GSTR-3B download page after selecting a month. Use those exact pages to implement and test reliable report actions and download completion tracking.
