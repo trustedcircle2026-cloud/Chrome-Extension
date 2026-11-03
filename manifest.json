@@ -1,12 +1,11 @@
 {
   "manifest_version": 3,
   "name": "GST Report Downloader",
-  "version": "0.2.0",
-  "description": "Floating GST return report panel for the authenticated GST Portal.",
+  "version": "0.3.0",
+  "description": "Compact GST Portal report popup.",
   "permissions": [
     "activeTab",
     "tabs",
-    "downloads",
     "storage",
     "scripting"
   ],
