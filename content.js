@@ -187,7 +187,7 @@
   }
   async function loadProfile() {
     const requests = [
-      {name:"ustatus",url:API+"/ustatus"},
+      {name:"ustatus",url:"https://return.gst.gov.in/services/api/ustatus"},
       {name:"dropdown",url:API+"/dropdown"}
     ];
     const results = await Promise.allSettled(requests.map(async item => ({name:item.name,url:item.url,data:await getJson(item.url),ok:true})));
