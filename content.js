@@ -349,47 +349,46 @@
     catch (_) { return text.trim(); }
   }
   async function downloadGstr1Json(period,button) {
-    // GST's supported GSTR-1 offline workflow: status -> upload summary ->
-    // save/validate -> generate -> obtain the authenticated download redirect.
+    // GSTR-1 offline JSON sequence observed on the GST Portal:
+    // 1) role status, 2) offline upload summary, 3) save/validate,
+    // 4) generate file, 5) request file_num=1 download redirect.
+    const params = new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"});
     const statusUrl = API + "/rolestatus?rtn_prd=" + encodeURIComponent(period);
     const statusData = await callGstApi(statusUrl,"GSTR-1 filing status");
-    if (!filing(statusData,"GSTR1").filed) {
-      throw new Error("GSTR-1 for " + period + " is not marked Filed by the GST Portal. Download stopped.");
+    const currentStatus = filing(statusData,"GSTR1");
+    if (!currentStatus.filed) {
+      throw new Error("GSTR-1 for " + period + " is not marked Filed by the GST Portal (" + currentStatus.label + "). Download stopped before file generation.");
     }
+
     button.textContent = "Summary…";
-    const summaryUrl = API + "/offline/upload/summary?" +
-      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"}).toString();
-    const summaryData = await callGstApi(summaryUrl,"GSTR-1 offline summary");
+    const summaryUrl = API + "/offline/upload/summary?" + params.toString();
+    const summaryData = await callGstApi(summaryUrl,"GSTR-1 offline upload summary");
 
     button.textContent = "Validate…";
-    const validateUrl = API + "/gstr/save/valid?" +
-      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"}).toString();
+    const validateUrl = API + "/gstr/save/valid?" + params.toString();
     const validationData = await callGstApi(validateUrl,"GSTR-1 save/validation");
 
     button.textContent = "Generate…";
     const generateUrl = API + "/offline/download/generate?" +
       new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:"GSTR1"}).toString();
-    const generatedData = await callGstApi(generateUrl,"GSTR-1 JSON generation");
+    const generatedData = await callGstApi(generateUrl,"GSTR-1 JSON file generation");
 
-    // The GST portal's generate endpoint prepares the offline file. The observed
-    // portal flow then exposes it through /offline/download/url, which responds
-    // with an authenticated redirect to files.gst.gov.in. Let Chrome Downloads
-    // follow that redirect; do not fetch the cross-origin ZIP from content.js.
+    // file_num=1 is required by the portal's download-url endpoint for the
+    // first generated GSTR-1 JSON archive. Use Chrome's native download manager
+    // so it follows the signed files.gst.gov.in redirect without page CORS.
     button.textContent = "Downloading…";
     const downloadUrl = API + "/offline/download/url?" +
-      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"}).toString();
-    // This endpoint redirects to files.gst.gov.in. Do not fetch it from the
-    // page context: that redirect is cross-origin and the file host may not
-    // grant CORS. Chrome Downloads follows the signed redirect natively.
+      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1",file_num:"1"}).toString();
     const filename = "GSTR1_" + period + "_JSON.zip";
-    await startNativeDownload(downloadUrl,filename);
+    const downloadId = await startNativeDownload(downloadUrl,filename);
 
-    apiData = apiData.filter(x => !["gstr1-status","gstr1-summary","gstr1-validation","gstr1-generate"].includes(x.name));
+    apiData = apiData.filter(x => !["gstr1-status","gstr1-summary","gstr1-validation","gstr1-generate","gstr1-download"].includes(x.name));
     apiData.push(
       {name:"gstr1-status",url:statusUrl,ok:true,data:statusData},
       {name:"gstr1-summary",url:summaryUrl,ok:true,data:summaryData},
       {name:"gstr1-validation",url:validateUrl,ok:true,data:validationData},
-      {name:"gstr1-generate",url:generateUrl,ok:true,data:generatedData}
+      {name:"gstr1-generate",url:generateUrl,ok:true,data:generatedData},
+      {name:"gstr1-download",url:downloadUrl,ok:true,data:{downloadId,filename}}
     );
     renderDeveloper();
   }
@@ -422,7 +421,7 @@
       button.textContent = "Started";
     } catch (error) {
       button.textContent = original;
-      alert("GST download failed (" + type + " " + period + "):\\n" + error.message);
+      alert("GST download failed (" + type + " " + period + "):\n" + error.message);
     } finally {
       button.disabled = false;
       downloading = false;
