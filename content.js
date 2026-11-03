@@ -8,7 +8,18 @@
   const LOGIN = "https://services.gst.gov.in/services/login";
   const $ = id => document.getElementById(id);
   const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const states = {"01":"Jammu and Kashmir","02":"Himachal Pradesh","03":"Punjab","04":"Chandigarh","05":"Uttarakhand","06":"Haryana","07":"Delhi","08":"Rajasthan","09":"Uttar Pradesh","10":"Bihar","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","18":"Assam","19":"West Bengal","20":"Jharkhand","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","24":"Gujarat","26":"Dadra and Nagar Haveli and Daman and Diu","27":"Maharashtra","29":"Karnataka","30":"Goa","31":"Lakshadweep","32":"Kerala","33":"Tamil Nadu","34":"Puducherry","35":"Andaman and Nicobar Islands","36":"Telangana","37":"Andhra Pradesh","38":"Ladakh","97":"Other Territory"};
+  const STATE_MASTER = [
+    {c:"35",n:"Andaman and Nicobar Islands"},{c:"37",n:"Andhra Pradesh"},{c:"12",n:"Arunachal Pradesh"},
+    {c:"18",n:"Assam"},{c:"10",n:"Bihar"},{c:"04",n:"Chandigarh"},{c:"22",n:"Chhattisgarh"},
+    {c:"26",n:"Dadra and Nagar Haveli and Daman and Diu"},{c:"07",n:"Delhi"},{c:"30",n:"Goa"},
+    {c:"24",n:"Gujarat"},{c:"06",n:"Haryana"},{c:"02",n:"Himachal Pradesh"},{c:"01",n:"Jammu and Kashmir"},
+    {c:"20",n:"Jharkhand"},{c:"29",n:"Karnataka"},{c:"32",n:"Kerala"},{c:"38",n:"Ladakh"},
+    {c:"31",n:"Lakshadweep"},{c:"23",n:"Madhya Pradesh"},{c:"27",n:"Maharashtra"},{c:"14",n:"Manipur"},
+    {c:"17",n:"Meghalaya"},{c:"15",n:"Mizoram"},{c:"13",n:"Nagaland"},{c:"21",n:"Odisha"},
+    {c:"97",n:"Other Territory"},{c:"34",n:"Puducherry"},{c:"03",n:"Punjab"},{c:"08",n:"Rajasthan"},
+    {c:"11",n:"Sikkim"},{c:"33",n:"Tamil Nadu"},{c:"36",n:"Telangana"},{c:"16",n:"Tripura"},
+    {c:"09",n:"Uttar Pradesh"},{c:"05",n:"Uttarakhand"},{c:"19",n:"West Bengal"}
+  ];
   const months = ["April","May","June","July","August","September","October","November","December","January","February","March"];
   const returnTypes = ["GSTR3B","GSTR1","GSTR2A"];
   let panel = null, apiData = [], identity = {name:"",gstin:"",state:""}, rows = [], loading = false, downloading = false;
@@ -202,7 +213,8 @@
     let stateName = "—";
     for (const candidate of stateCandidates) {
       const code = String(candidate || "").trim().padStart(2,"0");
-      if (/^\\d{2}$/.test(code) && states[code]) { stateName = states[code]; break; }
+      const matchedState = STATE_MASTER.find(item => item.c === code);
+      if (/^\d{2}$/.test(code) && matchedState) { stateName = matchedState.n; break; }
     }
     identity = {name:String(profile.bname || "").trim(),gstin,state:stateName};
     renderIdentity();
@@ -344,6 +356,11 @@
     else if (/spreadsheet|excel|officedocument/i.test(contentType) && !/\.(xlsx|xls)$/i.test(filename)) filename += ".xlsx";
     saveBlob(blob,filename);
   }
+  async function startNativeDownload(url,filename) {
+    const result = await chrome.runtime.sendMessage({type:"GST_NATIVE_DOWNLOAD",url,filename});
+    if (!result || !result.ok) throw new Error(result && result.error ? result.error : "Chrome could not start the download.");
+    return result.downloadId;
+  }
   async function download(type,period,format,button) {
     if (downloading) return;
     downloading = true;
@@ -366,12 +383,12 @@
       if (generated && (generated.status === 0 || generated.error)) throw new Error(generated.message || generated.error || "GST Portal could not generate this report.");
       const fileParams = new URLSearchParams({rtn_prd:period,rtn_typ:type,file_num:"1"});
       if (format === "EX") fileParams.set("file_type","EX");
-      const fileResponse = await fetch(API + "/offline/download/url?" + fileParams.toString(),{
-        credentials:"include",cache:"no-store",headers:{Accept:"application/octet-stream, application/zip, application/json, */*"}
-      });
-      if (!fileResponse.ok) throw new Error("Report download returned HTTP " + fileResponse.status);
-      await consumeFileResponse(fileResponse,type,period,format);
-      button.textContent = "Done";
+      // Do not fetch the files.gst.gov.in redirect in page context: it is cross-origin
+      // and is blocked by CORS. Chrome Downloads follows the authenticated GST redirect.
+      const downloadUrl = API + "/offline/download/url?" + fileParams.toString();
+      const filename = "GST_" + type + "_" + period + (format === "EX" ? "_Excel.zip" : ".zip");
+      await startNativeDownload(downloadUrl,filename);
+      button.textContent = "Started";
     } catch (error) {
       button.textContent = original;
       alert("GST download failed (" + type + " " + period + "):\n" + error.message);
