@@ -159,6 +159,31 @@
     $("gst-gate").hidden = true;
     if (show) renderDeveloper();
   }
+
+  // Render diagnostics safely whenever profile/API data changes or the
+  // Developer view is opened. Previously this function was called but absent,
+  // causing a ReferenceError that interrupted panel initialization.
+  function renderDeveloper() {
+    if (!panel || !panel.isConnected) return;
+    const count = $("gst-api-count");
+    const output = $("gst-api");
+    if (!count || !output) return;
+    count.textContent = apiData.length + " portal/API records captured";
+    const safeRecords = apiData.map(item => ({
+      name: item.name || "request",
+      url: item.url || "",
+      ok: Boolean(item.ok),
+      error: item.error || undefined,
+      data: item.data === undefined ? undefined : item.data
+    }));
+    try {
+      output.textContent = safeRecords.length
+        ? JSON.stringify(safeRecords, null, 2)
+        : "No API records captured yet. Open the GST Returns dashboard and click Refresh.";
+    } catch (error) {
+      output.textContent = "Unable to render diagnostics: " + String(error);
+    }
+  }
   function bindDragResize() {
     const header = $("gst-header");
     let drag = null, resize = null;
@@ -209,12 +234,17 @@
     if (!/^[0-9A-Z]{15}$/.test(gstin)) gstin = "";
     // GST Portal state master: state code ("c") -> state name ("n").
     // Prefer ustatus.stcd; fall back to the GSTIN's first two characters if needed.
-    const stateCandidates = [profile.stcd, gstin.slice(0,2)];
+    // The first two GSTIN characters are the official GST state code.
+    // Use this as the primary source; ustatus.stcd is only a fallback.
+    const stateCandidates = [gstin.slice(0,2), profile.stcd];
     let stateName = "—";
     for (const candidate of stateCandidates) {
       const code = String(candidate || "").trim().padStart(2,"0");
       const matchedState = STATE_MASTER.find(item => item.c === code);
-      if (/^\d{2}$/.test(code) && matchedState) { stateName = matchedState.n; break; }
+      if (/^\d{2}$/.test(code) && matchedState) {
+        stateName = matchedState.n;
+        break;
+      }
     }
     identity = {name:String(profile.bname || "").trim(),gstin,state:stateName};
     renderIdentity();
