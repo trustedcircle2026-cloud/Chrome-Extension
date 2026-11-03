@@ -314,48 +314,6 @@
       $("gst-refresh").textContent = "Refresh";
     }
   }
-  function findDownloadUrl(value) {
-    let found = "";
-    walk(value,item => {
-      if (typeof item === "string" && /^https?:\/\//i.test(item) && (/files\.gst\.gov\.in|download|\.zip(?:\?|$)/i.test(item))) found = item;
-    });
-    return found;
-  }
-  function saveBlob(blob,name) {
-    if (!blob || !blob.size) throw new Error("GST Portal returned an empty file.");
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = name;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url),30000);
-  }
-  async function consumeFileResponse(response,type,period,format) {
-    const contentType = response.headers.get("content-type") || "";
-    const disposition = response.headers.get("content-disposition") || "";
-    const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
-    let filename = filenameMatch ? decodeURIComponent(filenameMatch[1].replace(/"/g,"")) : "GST_" + type + "_" + period + (format === "EX" ? ".zip" : ".zip");
-    if (contentType.includes("json") || contentType.includes("text/plain")) {
-      const text = await response.text();
-      let payload;
-      try { payload = JSON.parse(text); } catch (_) { throw new Error("Unexpected download response: " + text.slice(0,180)); }
-      if (payload.status === 0 || payload.error) throw new Error(payload.message || payload.error || "GST report generation failed.");
-      const url = findDownloadUrl(payload);
-      if (url) {
-        const fileResponse = await fetch(url,{credentials:"include",cache:"no-store"});
-        if (!fileResponse.ok) throw new Error("GST file URL returned HTTP " + fileResponse.status);
-        return consumeFileResponse(fileResponse,type,period,format);
-      }
-      saveBlob(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}),filename.replace(/\.zip$/i,".json"));
-      return;
-    }
-    const blob = await response.blob();
-    if (/zip/i.test(contentType) && !/\.zip$/i.test(filename)) filename += ".zip";
-    else if (/spreadsheet|excel|officedocument/i.test(contentType) && !/\.(xlsx|xls)$/i.test(filename)) filename += ".xlsx";
-    saveBlob(blob,filename);
-  }
   async function startNativeDownload(url,filename) {
     const result = await chrome.runtime.sendMessage({type:"GST_NATIVE_DOWNLOAD",url,filename});
     if (!result || !result.ok) throw new Error(result && result.error ? result.error : "Chrome could not start the download.");
