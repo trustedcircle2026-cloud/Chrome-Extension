@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GST Report Downloader",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Persistent black-and-white GST Returns panel with taxpayer profile, filing-status checks and authenticated report downloads.",
   "permissions": [
     "activeTab",
