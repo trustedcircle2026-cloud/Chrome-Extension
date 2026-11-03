@@ -1,89 +1,14 @@
 (() => {
- if (window.__gstReportDownloaderLoaded) return;
- window.__gstReportDownloaderLoaded = true;
- const clean = v => (v || "").replace(/\s+/g, " ").trim();
- const textOf = e => clean(e && (e.innerText || e.textContent));
- const stateNames = {"01":"Jammu and Kashmir","02":"Himachal Pradesh","03":"Punjab","04":"Chandigarh","05":"Uttarakhand","06":"Haryana","07":"Delhi","08":"Rajasthan","09":"Uttar Pradesh","10":"Bihar","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","18":"Assam","19":"West Bengal","20":"Jharkhand","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","24":"Gujarat","26":"Dadra and Nagar Haveli and Daman and Diu","27":"Maharashtra","29":"Karnataka","30":"Goa","31":"Lakshadweep","32":"Kerala","33":"Tamil Nadu","34":"Puducherry","35":"Andaman and Nicobar Islands","36":"Telangana","37":"Andhra Pradesh","38":"Ladakh","97":"Other Territory"};
- const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
- const monthRe = /(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s*[-–/ ]\s*(20\d{2})/i;
- function parseMonth(s) {
-   const m = clean(s).match(monthRe); if (!m) return null;
-   const i = monthNames.findIndex(x => x.slice(0,3).toLowerCase() === m[1].slice(0,3).toLowerCase());
-   return i < 0 ? null : {period:monthNames[i]+" "+m[2],monthIndex:i,year:Number(m[2])};
- }
- function details() {
-   const body = document.body.innerText || "";
-   const gst = body.match(/\b[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/);
-   const gstin = gst ? gst[0] : "";
-   let trade = "";
-   const welcome = body.match(/Welcome\s+(.+?)\s+to\s+(?:the\s+)?(?:Goods|GST|Dashboard)/i) || body.match(/Welcome\s+(.+?)\s+to\b/i);
-   if (welcome) trade = clean(welcome[1]);
-   if (!trade) {
-     for (const sel of [".user-name",".taxpayer-name",".trade-name","#tradeName","[data-testid*=trade]","[title*=trade i]"]) {
-       const t = textOf(document.querySelector(sel));
-       if (t && t.length < 120 && !/welcome|logout|last login/i.test(t)) { trade=t; break; }
-     }
-   }
-   if (!trade) {
-     const lines = body.split(/\n/).map(clean).filter(Boolean);
-     const idx = lines.findIndex(x => /^welcome$/i.test(x));
-     if (idx >= 0 && lines[idx+1] && !/to goods|to gst/i.test(lines[idx+1])) trade=lines[idx+1];
-   }
-   const code = gstin ? gstin.slice(0,2) : "";
-   return {gstin,tradeName:trade,state:stateNames[code] || (code ? "GST state code "+code : "")};
- }
- function scan() {
-   const map = new Map();
-   function ensure(info) {
-     if (!map.has(info.period)) map.set(info.period,{...info,"GSTR-1":"Not detected","GSTR-3B":"Not detected","GSTR-2A":"Not detected","GSTR-2B":"Not detected",actions:[]});
-     return map.get(info.period);
-   }
-   function statusFrom(s) {
-     if (/not filed|not submitted|pending|overdue/i.test(s)) return "Not filed";
-     if (/filed|submitted|success|processed/i.test(s)) return "Filed";
-     if (/due/i.test(s)) return "Due";
-     return "Status shown";
-   }
-   const candidates = [...document.querySelectorAll("tr,[role=row],.return-period,.month-card,.return-card,.card")];
-   for (const el of candidates) {
-     const t = textOf(el); if (!t || t.length > 1800) continue;
-     const info = parseMonth(t); if (!info) continue;
-     const row = ensure(info);
-     for (const type of ["GSTR-1","GSTR-3B","GSTR-2A","GSTR-2B"]) {
-       const pattern = type === "GSTR-1" ? /GSTR\s*[- ]?\s*1/i :
-         type === "GSTR-3B" ? /GSTR\s*[- ]?\s*3\s*B/i :
-         type === "GSTR-2A" ? /GSTR\s*[- ]?\s*2\s*A/i : /GSTR\s*[- ]?\s*2\s*B/i;
-       if (pattern.test(t)) {
-         const match = t.match(/not filed|not submitted|pending|filed|submitted|due|processed/i);
-         row[type] = match ? statusFrom(match[0]) : "Listed";
-       }
-     }
-     for (const c of el.querySelectorAll("a,button,[role=button]")) {
-       const label = textOf(c) || c.getAttribute("aria-label") || c.getAttribute("title") || "";
-       if (/download|view|filed|details/i.test(label)) row.actions.push({label:label.slice(0,35)});
-     }
-   }
-   const lines = (document.body.innerText || "").split(/\n/).map(clean).filter(Boolean);
-   for (let i=0;i<lines.length;i++) {
-     const info = parseMonth(lines[i]); if (!info) continue;
-     const context = lines.slice(i,Math.min(i+7,lines.length)).join(" | ");
-     const row = ensure(info);
-     for (const type of ["GSTR-1","GSTR-3B","GSTR-2A","GSTR-2B"]) {
-       const pattern = type === "GSTR-1" ? /GSTR\s*[- ]?\s*1/i :
-         type === "GSTR-3B" ? /GSTR\s*[- ]?\s*3\s*B/i :
-         type === "GSTR-2A" ? /GSTR\s*[- ]?\s*2\s*A/i : /GSTR\s*[- ]?\s*2\s*B/i;
-       if (pattern.test(context)) {
-         const match = context.match(/not filed|not submitted|pending|filed|submitted|due|processed/i);
-         row[type] = match ? statusFrom(match[0]) : "Listed";
-       }
-     }
-   }
-   return [...map.values()].sort((a,b)=>a.year-b.year||a.monthIndex-b.monthIndex);
- }
- chrome.runtime.onMessage.addListener((msg,sender,send) => {
-   if (msg.type === "GST_SCAN") { send({...details(),periods:scan(),url:location.href,pageTitle:document.title}); return true; }
-   if (msg.type === "GST_ACTIVATE_ACTION" || msg.type === "GST_DOWNLOAD") {
-     send({ok:false,message:"Report-specific download actions are not yet connected to a verified GST Portal control. Open the report in the portal and download it there; the dashboard currently displays detected filing information only."}); return true;
-   }
- });
+if(window.__gstReportDownloaderLoaded)return;window.__gstReportDownloaderLoaded=true;
+const clean=s=>(s||"").replace(/\s+/g," ").trim();
+const states={"32":"Kerala","33":"Tamil Nadu","29":"Karnataka","36":"Telangana","37":"Andhra Pradesh","27":"Maharashtra","07":"Delhi","09":"Uttar Pradesh","24":"Gujarat","19":"West Bengal","08":"Rajasthan","06":"Haryana","03":"Punjab","10":"Bihar","21":"Odisha","22":"Chhattisgarh","23":"Madhya Pradesh","18":"Assam","02":"Himachal Pradesh","01":"Jammu and Kashmir","04":"Chandigarh","05":"Uttarakhand","11":"Sikkim","12":"Arunachal Pradesh","13":"Nagaland","14":"Manipur","15":"Mizoram","16":"Tripura","17":"Meghalaya","20":"Jharkhand","26":"Dadra and Nagar Haveli and Daman and Diu","30":"Goa","31":"Lakshadweep","34":"Puducherry","35":"Andaman and Nicobar Islands","38":"Ladakh","97":"Other Territory"};
+const months=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const mk=(tag,attrs={},txt="")=>{const e=document.createElement(tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);if(txt)e.textContent=txt;return e;};
+function taxpayer(){const txt=document.body.innerText||"",gstin=(txt.match(/\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b/)||[])[0]||"";let name="";for(const re of [/Welcome\s+(.+?)\s+to\s+(?:the\s+)?(?:Goods|GST|Dashboard)/i,/Welcome\s+(.+?)\s+to\b/i,/Trade\s*Name\s*[:\-]?\s*([^\n]+)/i]){const m=txt.match(re);if(m){name=clean(m[1]);break;}}const code=gstin.slice(0,2);return{name,gstin,state:states[code]||(code?"GST state code "+code:"Not detected")};}
+function periods(){const map=new Map(),re=/(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s*[-–/, ]\s*(20\d{2})/i;for(const n of document.querySelectorAll("tr,[role=row],.card,.return-period,.month-card,.return-card")){const t=clean(n.innerText||n.textContent);if(t.length>2200)continue;const m=t.match(re);if(!m)continue;const i=months.findIndex(x=>x.slice(0,3).toLowerCase()===m[1].slice(0,3).toLowerCase()),key=months[i]+" "+m[2],row=map.get(key)||{month:key,types:{"GSTR-1":"Not visible","GSTR-3B":"Not visible","GSTR-2A":"Not visible","GSTR-2B":"Not visible"}};for(const type of Object.keys(row.types)){const rx=type==="GSTR-1"?/GSTR\s*[- ]?\s*1/i:type==="GSTR-3B"?/GSTR\s*[- ]?\s*3\s*B/i:type==="GSTR-2A"?/GSTR\s*[- ]?\s*2\s*A/i:/GSTR\s*[- ]?\s*2\s*B/i;if(rx.test(t)){const s=(t.match(/not filed|pending|filed|submitted|due|processed/i)||[])[0];row.types[type]=s?(/not filed|pending/i.test(s)?"Not Filed":/due/i.test(s)?"Due":"Filed"):"Listed";}}map.set(key,row);}return [...map.values()];}
+let root,sh,rows,trade,info,msg,collapsed=false;
+function update(){const d=taxpayer(),p=periods(),txt=document.body.innerText||"",fy=(txt.match(/\b20\d{2}\s*[-–]\s*\d{2,4}\b/)||[])[0]||"Not detected",q=(txt.match(/\bQuarter\s*[1-4](?:\s*\([^)]*\))?/i)||[])[0]||"Not detected";trade.textContent=d.name||"Trade name not visible on this page";sh.getElementById("gst-rd-gstin").textContent=d.gstin||"Not detected";sh.getElementById("gst-rd-state").textContent=d.state;info.textContent="Portal FY: "+fy+" • "+q;rows.replaceChildren();if(p.length){for(const r of p){const tr=mk("tr");tr.append(mk("td",{},r.month));for(const t of ["GSTR-1","GSTR-3B","GSTR-2A","GSTR-2B"]){const v=r.types[t],td=mk("td"),span=mk("span",{class:/filed/i.test(v)&&!/not/i.test(v)?"ok":/not filed|pending/i.test(v)?"warn":"tag"},v);td.append(span);tr.append(td);}rows.append(tr);}msg.textContent=p.length+" month rows detected.";}else{const tr=mk("tr"),td=mk("td",{colspan:"5",class:"empty"},"This page has FY / quarter / return tiles, not monthly rows. Open the Returns Calendar or a return's period/status list.");tr.append(td);rows.append(tr);msg.textContent="No month-wise register exists in the current page view.";}}
+function build(){if(document.getElementById("gst-rd-root"))return;root=mk("div",{id:"gst-rd-root",style:"all:initial;position:fixed;z-index:2147483647;right:14px;top:105px;width:min(420px,calc(100vw - 24px));font:13px Arial;color:#17243b"});sh=root.attachShadow({mode:"open"});const css=mk("style");css.textContent="*{box-sizing:border-box}.panel{background:#f4f7fb;border:1px solid #cbd6e4;border-radius:12px;box-shadow:0 10px 36px #0b1e3a44;overflow:hidden}header{display:flex;gap:9px;align-items:center;background:#102653;color:white;padding:11px}.logo{background:#159b68;padding:9px;border-radius:8px;font-weight:bold}.head{flex:1}h2{font-size:14px;margin:0}.sub{font-size:10px;color:#cbd8eb;margin-top:3px}button{border:0;border-radius:6px;padding:8px 10px;font-weight:bold;cursor:pointer}.toggle{background:#29436b;color:white}.content{padding:10px;max-height:calc(100vh - 165px);overflow:auto}.card{background:white;border:1px solid #e0e7ef;border-radius:8px;padding:10px;margin-bottom:8px}.label{font-size:9px;color:#728096;font-weight:bold}.trade{font-weight:bold;font-size:13px;margin:4px 0 8px}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}.value{font-size:11px;font-weight:bold;margin-top:3px}.info{font-size:10px;color:#53647a;margin:7px 1px}.wrap{overflow:auto;background:white;border:1px solid #e0e7ef;border-radius:8px}table{border-collapse:collapse;width:100%;min-width:480px;font-size:10px}th{background:#eaf0f7;text-align:left;padding:8px}td{padding:8px;border-top:1px solid #edf1f5;white-space:nowrap}.tag,.ok,.warn{display:inline-block;padding:4px 6px;border-radius:12px;background:#edf1f5;color:#64748b}.ok{background:#ddf5e8;color:#087443}.warn{background:#fff0d2;color:#956000}.empty{padding:12px;text-align:center;color:#64748b;line-height:1.5}.actions{display:flex;gap:7px;margin-top:8px}.refresh{background:#15965e;color:white}.min{background:#e5ecf4;color:#31445f}.foot{font-size:9px;color:#718096;line-height:1.4;margin-top:8px}.collapsed .content{display:none}";const panel=mk("div",{class:"panel"}),header=mk("header");header.append(mk("div",{class:"logo"},"GST"));const head=mk("div",{class:"head"});head.append(mk("h2",{},"GST Report Downloader"),mk("div",{class:"sub"},"Live GST Portal panel"));header.append(head);const toggle=mk("button",{class:"toggle"},"−");header.append(toggle);panel.append(header);const content=mk("div",{class:"content"}),card=mk("div",{class:"card"});card.append(mk("div",{class:"label"},"TRADE NAME"));trade=mk("div",{class:"trade"},"Reading taxpayer…");card.append(trade);const meta=mk("div",{class:"meta"});for(const [label,id] of [["GSTIN","gst-rd-gstin"],["STATE","gst-rd-state"]]){const box=mk("div");box.append(mk("div",{class:"label"},label),mk("div",{class:"value",{id},"—"));meta.append(box);}card.append(meta);content.append(card);info=mk("div",{class:"info"});content.append(info);const wrap=mk("div",{class:"wrap"}),table=mk("table"),thead=mk("thead"),hr=mk("tr");["Month","GSTR-1","GSTR-3B","GSTR-2A","GSTR-2B"].forEach(x=>hr.append(mk("th",{},x)));thead.append(hr);rows=mk("tbody");table.append(thead,rows);wrap.append(table);content.append(wrap);msg=mk("div",{class:"empty"});content.append(msg);const actions=mk("div",{class:"actions"}),refresh=mk("button",{class:"refresh"},"↻ Refresh"),min=mk("button",{class:"min"},"Minimise");actions.append(refresh,min);content.append(actions,mk("div",{class:"foot"},"Only portal-visible statuses are shown. Download controls will be added after verifying the actual GST report download screen."));panel.append(content);sh.append(css,panel);document.documentElement.append(root);toggle.onclick=()=>{collapsed=!collapsed;panel.classList.toggle("collapsed",collapsed);toggle.textContent=collapsed?"+":"−";};min.onclick=()=>{collapsed=true;panel.classList.add("collapsed");toggle.textContent="+";};refresh.onclick=update;}
+build();update();let debounce;new MutationObserver(()=>{clearTimeout(debounce);debounce=setTimeout(update,700);}).observe(document.body,{childList:true,subtree:true,characterData:true});
+chrome.runtime.onMessage.addListener((m,s,send)=>{if(m.type==="GST_SCAN"){send({...taxpayer(),periods:periods(),url:location.href});return true;}if(m.type==="GST_SHOW_PANEL"){collapsed=false;sh.querySelector(".panel").classList.remove("collapsed");sh.querySelector(".toggle").textContent="−";update();send({ok:true});return true;}});
 })();
