@@ -363,7 +363,7 @@
     // follow that redirect; do not fetch the cross-origin ZIP from content.js.
     button.textContent = "Downloading…";
     const downloadUrl = API + "/offline/download/url?" +
-      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1",file_num:"1"}).toString();
+      new URLSearchParams({rtn_prd:period,rtn_typ:"GSTR1"}).toString();
     const filename = "GSTR1_" + period + "_JSON.zip";
     await startNativeDownload(downloadUrl,filename);
 
