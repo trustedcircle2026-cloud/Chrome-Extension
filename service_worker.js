@@ -54,15 +54,19 @@ chrome.downloads.onChanged.addListener(async delta => {
     const finalUrl = String(item.finalUrl || "");
     const mime = String(item.mime || "").toLowerCase();
     const looksLikeHtml = mime.includes("text/html") ||
-      /\.(html?|aspx?)(?:[?#]|$)/i.test(finalUrl) ||
-      /services\.gst\.gov\.in\/services\/(login|error\/accessdenied)/i.test(finalUrl);
-    if (looksLikeHtml) {
+      /\\.(html?|aspx?)(?:[?#]|$)/i.test(finalUrl) ||
+      /services\\.gst\\.gov\\.in\\/services\\/(login|error\\/accessdenied)/i.test(finalUrl);
+    const expectedPdf = /GSTR3B_.*\\.pdf$/i.test(tracked.filename || "");
+    const wrongPdfType = expectedPdf && (mime.includes("application/json") || mime.includes("text/plain") || mime.includes("text/html"));
+    if (looksLikeHtml || wrongPdfType) {
       try { await chrome.downloads.removeFile(delta.id); } catch (_) {}
       try { await chrome.downloads.erase({id:delta.id}); } catch (_) {}
       if (tracked.tabId) {
         chrome.tabs.sendMessage(tracked.tabId,{
           type:"GST_DOWNLOAD_FAILED",
-          error:"The GST Portal returned an HTML login/access-denied page instead of the GSTR-1 ZIP. The invalid file was removed. Sign in again and retry."
+          error: expectedPdf
+            ? "The GST Portal did not return a PDF file (it returned a login page or API error response). The invalid file was removed. Sign in again, confirm the GSTR-3B is available, and retry."
+            : "The GST Portal returned an HTML login/access-denied page instead of the requested return ZIP. The invalid file was removed. Sign in again and retry."
         }).catch(()=>{});
       }
     }
