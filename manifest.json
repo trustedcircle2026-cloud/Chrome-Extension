@@ -1,17 +1,33 @@
 {
   "manifest_version": 3,
   "name": "GST Report Downloader",
-  "version": "0.1.0",
-  "description": "Download GST return reports from your authenticated GST Portal session.",
-  "permissions": ["activeTab", "downloads", "storage", "scripting"],
-  "host_permissions": ["https://return.gst.gov.in/*", "https://services.gst.gov.in/*"],
+  "version": "0.2.0",
+  "description": "Floating GST return report panel for the authenticated GST Portal.",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "downloads",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://return.gst.gov.in/*",
+    "https://services.gst.gov.in/*"
+  ],
   "action": {
     "default_title": "GST Report Downloader",
     "default_popup": "popup.html"
   },
-  "content_scripts": [{
-    "matches": ["https://return.gst.gov.in/*", "https://services.gst.gov.in/*"],
-    "js": ["content.js"],
-    "run_at": "document_idle"
-  }]
+  "content_scripts": [
+    {
+      "matches": [
+        "https://return.gst.gov.in/*",
+        "https://services.gst.gov.in/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }
