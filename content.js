@@ -342,7 +342,7 @@
       throw new Error("GST session expired or access denied while calling " + label + ". The portal returned its login page, not a return file. Click Go to Login, sign in, reopen the Returns dashboard, and retry.");
     }
     if (!response.ok) throw new Error(label + " failed (HTTP " + response.status + ").");
-    if (response.redirected && /services\\.gst\\.gov\\/services\\/(login|error\\/accessdenied)/i.test(finalUrl)) {
+    if (response.redirected && /services\.gst\.gov\/services\/(login|error\/accessdenied)/i.test(finalUrl)) {
       throw new Error("GST session expired. Please sign in again before downloading.");
     }
     try { return JSON.parse(text); }
