@@ -379,12 +379,48 @@
     catch (_) { return text.trim(); }
   }
   const wait = ms => new Promise(resolve => setTimeout(resolve,ms));
+  function findPortalGstr3bDownloadButton() {
+    // The GST Portal renders this AngularJS control on its GSTR-3B download
+    // page. Prefer the portal's own handler whenever that page is open.
+    const candidates = Array.from(document.querySelectorAll(
+      'button[data-ng-click="downloadGSTR3Bpdf()"], button[ng-click="downloadGSTR3Bpdf()"]'
+    ));
+    return candidates.find(el => {
+      const rect = el.getBoundingClientRect();
+      return !el.disabled && rect.width > 0 && rect.height > 0 &&
+        /download/i.test(String(el.textContent || "").trim());
+    }) || null;
+  }
+
   async function downloadGstr3bPdf(period,button) {
-    // GSTR-3B PDF workflow. The GSTIN is taken from the authenticated
-    // taxpayer profile; never send the literal string "undefined".
+    // Prefer the GST Portal's own AngularJS Download button when it is
+    // present. This preserves the portal's authenticated PDF generation flow.
+    const portalButton = findPortalGstr3bDownloadButton();
+    if (portalButton) {
+      button.textContent = "Portal…";
+      portalButton.click();
+      apiData = apiData.filter(x => x.name !== "gstr3b-portal-download");
+      apiData.push({
+        name:"gstr3b-portal-download",
+        url:location.href,
+        ok:true,
+        data:{
+          selector:'button[data-ng-click="downloadGSTR3Bpdf()"]',
+          action:"Clicked the GST Portal's native Download button",
+          period
+        }
+      });
+      renderDeveloper();
+      return "portal-button";
+    }
+
+    // Fallback for the Returns dashboard, where the portal's native Download
+    // button is not in the DOM: use the authenticated API workflow below.
+    // The GSTIN is taken from the signed-in taxpayer profile; never send
+    // the literal string "undefined".
     const gstin = String(identity.gstin || "").trim().toUpperCase();
     if (!/^[0-9A-Z]{15}$/.test(gstin)) {
-      throw new Error("GSTIN was not detected from the signed-in taxpayer profile. Refresh the GST Portal and retry.");
+      throw new Error("GSTIN was not detected from the signed-in taxpayer profile. Open the GST Returns dashboard, click Refresh, and retry.");
     }
     const periodParam = "rtn_prd=" + encodeURIComponent(period);
     const formUrl = API + "/formdetails?" + periodParam + "&rtn_typ=GSTR3B";
