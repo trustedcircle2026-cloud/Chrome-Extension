@@ -310,7 +310,7 @@
       const cell = type => {
         const result = row.statuses[type];
         if (!result.filed) return '<span class="gst-status">' + esc(result.label) + '</span>';
-        if (type === "GSTR3B") return '<span class="gst-status filed">Filed</span>';
+        if (type === "GSTR3B") return '<div class="gst-actions"><span class="gst-status filed">Filed</span><button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF">PDF</button></div>';
         return '<div class="gst-actions"><button data-type="' + type + '" data-period="' + row.period + '" data-format="JSON">JSON</button>' +
           (type === "GSTR2A" ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="EX">EX</button>' : "") + '</div>';
       };
@@ -379,6 +379,44 @@
     catch (_) { return text.trim(); }
   }
   const wait = ms => new Promise(resolve => setTimeout(resolve,ms));
+  async function downloadGstr3bPdf(period,button) {
+    // GSTR-3B PDF workflow. The GSTIN is taken from the authenticated
+    // taxpayer profile; never send the literal string "undefined".
+    const gstin = String(identity.gstin || "").trim().toUpperCase();
+    if (!/^[0-9A-Z]{15}$/.test(gstin)) {
+      throw new Error("GSTIN was not detected from the signed-in taxpayer profile. Refresh the GST Portal and retry.");
+    }
+    const periodParam = "rtn_prd=" + encodeURIComponent(period);
+    const formUrl = API + "/formdetails?" + periodParam + "&rtn_typ=GSTR3B";
+    const sysintUrl = API + "/gstr3b/sysint?gstin=" + encodeURIComponent(gstin) + "&" + periodParam;
+    const pdfUrl = API + "/gstr3b/getgenpdf?" + periodParam;
+    const taxUrl = API + "/gstr3b/taxpayble?" + periodParam;
+
+    button.textContent = "Form…";
+    const formData = await callGstApi(formUrl,"GSTR-3B form details");
+
+    button.textContent = "System…";
+    const sysintData = await callGstApi(sysintUrl,"GSTR-3B system-generated details");
+
+    button.textContent = "Tax…";
+    const taxData = await callGstApi(taxUrl,"GSTR-3B tax payable details");
+
+    // getgenpdf is the portal's PDF response endpoint. Start it through
+    // chrome.downloads so the browser follows the authenticated portal response.
+    button.textContent = "PDF…";
+    const downloadId = await startNativeDownload(pdfUrl,"GSTR3B_" + period + ".pdf");
+
+    apiData = apiData.filter(x => !/^gstr3b-/.test(x.name));
+    apiData.push(
+      {name:"gstr3b-formdetails",url:formUrl,ok:true,data:formData},
+      {name:"gstr3b-sysint",url:sysintUrl,ok:true,data:sysintData},
+      {name:"gstr3b-taxpayble",url:taxUrl,ok:true,data:taxData},
+      {name:"gstr3b-getgenpdf",url:pdfUrl,ok:true,data:{downloadId,filename:"GSTR3B_" + period + ".pdf",note:"Started authenticated Chrome download from GST Portal PDF endpoint."}}
+    );
+    renderDeveloper();
+    return downloadId;
+  }
+
   async function downloadGstr1Json(period,button) {
     // GST Portal GSTR-1 offline download sequence:
     // 1) return filing status 2) upload summary 3) save/validation
@@ -434,6 +472,8 @@
     try {
       if (type === "GSTR1" && format === "JSON") {
         await downloadGstr1Json(period,button);
+      } else if (type === "GSTR3B" && format === "PDF") {
+        await downloadGstr3bPdf(period,button);
       } else {
         // Keep the existing download flow for other return types/formats.
         const latest = await getJson(API + "/rolestatus?rtn_prd=" + encodeURIComponent(period));
