@@ -23,6 +23,7 @@
   const months = ["April","May","June","July","August","September","October","November","December","January","February","March"];
   const returnTypes = ["GSTR3B","GSTR1","GSTR2A"];
   let panel = null, apiData = [], identity = {name:"",gstin:"",state:""}, rows = [], loading = false, downloading = false;
+  const gstr2aGenerated = new Set();
 
   const path = () => location.pathname.replace(/\/+$/, "");
   const isAccessDenied = () => location.hostname === "services.gst.gov.in" && path() === "/services/error/accessdenied";
@@ -311,8 +312,12 @@
         const result = row.statuses[type];
         if (!result.filed) return '<span class="gst-status">' + esc(result.label) + '</span>';
         if (type === "GSTR3B") return '<div class="gst-actions"><span class="gst-status filed">Filed</span><button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF">PDF</button></div>';
-        return '<div class="gst-actions"><button data-type="' + type + '" data-period="' + row.period + '" data-format="JSON">JSON</button>' +
-          (type === "GSTR2A" ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="EX">EX</button>' : "") + '</div>';
+        if (type === "GSTR2A") {
+          const generated = gstr2aGenerated.has(row.period);
+          return '<div class="gst-actions"><button data-type="GSTR2A" data-period="' + row.period + '" data-format="G">G</button>' +
+            (generated ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="D">D</button>' : '') + '</div>';
+        }
+        return '<div class="gst-actions"><button data-type="' + type + '" data-period="' + row.period + '" data-format="JSON">JSON</button></div>';
       };
       return '<tr><td class="gst-period">' + esc(row.month) + '</td><td>' + cell("GSTR3B") + '</td><td>' + cell("GSTR1") + '</td><td>' + cell("GSTR2A") + '</td></tr>';
     }).join("");
@@ -499,6 +504,29 @@
     renderDeveloper();
     return downloadId;
   }
+  async function generateGstr2a(period,button) {
+    const generateUrl = API + "/offline/download/generate?" +
+      new URLSearchParams({rtn_typ:"GSTR2A",rtn_prd:period,flag:"0",file_type:"EX"}).toString();
+    button.textContent = "…";
+    const generatedData = await callGstApi(generateUrl,"GSTR-2A Excel file generation");
+    gstr2aGenerated.add(period);
+    apiData = apiData.filter(x => x.name !== "gstr2a-generate-" + period);
+    apiData.push({name:"gstr2a-generate-" + period,url:generateUrl,ok:true,data:generatedData});
+    renderDeveloper();
+    renderRows();
+  }
+
+  async function downloadGstr2aFile(period,button) {
+    const downloadUrl = API + "/offline/download/url?" +
+      new URLSearchParams({rtn_typ:"GSTR2A",rtn_prd:period,file_num:"1",file_type:"EX"}).toString();
+    const filename = "GSTR2A_" + period + "_Excel.zip";
+    button.textContent = "…";
+    const downloadId = await startNativeDownload(downloadUrl,filename);
+    apiData = apiData.filter(x => x.name !== "gstr2a-download-" + period);
+    apiData.push({name:"gstr2a-download-" + period,url:downloadUrl,ok:true,data:{downloadId,filename}});
+    renderDeveloper();
+  }
+
   async function download(type,period,format,button) {
     if (downloading) return;
     downloading = true;
@@ -506,7 +534,11 @@
     button.disabled = true;
     button.textContent = "Checking…";
     try {
-      if (type === "GSTR1" && format === "JSON") {
+      if (type === "GSTR2A" && format === "G") {
+        await generateGstr2a(period,button);
+      } else if (type === "GSTR2A" && format === "D") {
+        await downloadGstr2aFile(period,button);
+      } else if (type === "GSTR1" && format === "JSON") {
         await downloadGstr1Json(period,button);
       } else if (type === "GSTR3B" && format === "PDF") {
         await downloadGstr3bPdf(period,button);
@@ -527,7 +559,7 @@
         const filename = "GST_" + type + "_" + period + (format === "EX" ? "_Excel.zip" : ".zip");
         await startNativeDownload(downloadUrl,filename);
       }
-      button.textContent = "Started";
+      if (format !== "G") button.textContent = "Started";
     } catch (error) {
       button.textContent = original;
       alert("GST download failed (" + type + " " + period + "):\n" + error.message);
