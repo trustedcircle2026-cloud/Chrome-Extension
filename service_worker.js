@@ -54,9 +54,9 @@ chrome.downloads.onChanged.addListener(async delta => {
     const finalUrl = String(item.finalUrl || "");
     const mime = String(item.mime || "").toLowerCase();
     const looksLikeHtml = mime.includes("text/html") ||
-      /\\.(html?|aspx?)(?:[?#]|$)/i.test(finalUrl) ||
-      /services\\.gst\\.gov\\.in\\/services\\/(login|error\\/accessdenied)/i.test(finalUrl);
-    const expectedPdf = /GSTR3B_.*\\.pdf$/i.test(tracked.filename || "");
+      /\.(html?|aspx?)(?:[?#]|$)/i.test(finalUrl) ||
+      /services\.gst\.gov\.in\/services\/(login|error\/accessdenied)/i.test(finalUrl);
+    const expectedPdf = /GSTR3B_.*\.pdf$/i.test(tracked.filename || "");
     const wrongPdfType = expectedPdf && (mime.includes("application/json") || mime.includes("text/plain") || mime.includes("text/html"));
     if (looksLikeHtml || wrongPdfType) {
       try { await chrome.downloads.removeFile(delta.id); } catch (_) {}
