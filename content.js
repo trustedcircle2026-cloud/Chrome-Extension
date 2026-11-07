@@ -315,20 +315,12 @@
     $("gst-return-heading").textContent = label;
     $("gst-rows").innerHTML = rows.map(row => {
       const result = row.statuses[type] || {filed:false,label:"Status unavailable"};
-      const dot = type === "GSTR2A" ? "" : '<span class="gst-dot' + (result.filed ? ' filed' : '') + '" title="' + (result.filed ? 'Filed' : 'Not filed') + '"></span>';
-      let action = "";
-      if (type === "GSTR2A") {
-        const generated = gstr2aGenerated.has(row.period);
-        action = '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="G" title="Generate Excel">G</button>' +
-          (generated ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="D" title="Download Excel">D</button>' : '');
-      } else if (result.filed && type === "GSTR1") {
-        action = '<button data-type="GSTR1" data-period="' + row.period + '" data-format="JSON" title="Download JSON">JSON</button>' +
-          '<span class="gst-file-icon disabled" title="PDF download not yet available">PDF</span>' +
-          '<span class="gst-file-icon disabled" title="Excel download not yet available">XLS</span>';
-      } else if (result.filed && type === "GSTR3B") {
-        action = '<button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF" title="Download PDF">PDF</button>';
-      }
-      return '<tr><td class="gst-period">' + esc(row.month) + '</td><td><div class="gst-actions">' + dot + action + '</div></td></tr>';
+      const dot = '<span class="gst-dot' + (result.filed ? ' filed' : '') + '" title="' + (result.filed ? 'Filed' : 'Not filed') + '"></span>';
+      const icons = '<button class="gst-file-icon" data-type="' + type + '" data-period="' + row.period + '" data-format="PDF" title="Download PDF" aria-label="Download PDF">PDF</button>' +
+        '<button class="gst-file-icon" data-type="' + type + '" data-period="' + row.period + '" data-format="EX" title="Download Excel" aria-label="Download Excel">XLS</button>' +
+        '<button class="gst-file-icon" data-type="' + type + '" data-period="' + row.period + '" data-format="JSON" title="Download JSON" aria-label="Download JSON">{ }</button>';
+      const generate = '<button class="gst-generate" data-type="' + type + '" data-period="' + row.period + '" data-format="G" title="Generate report">G</button>';
+      return '<tr><td class="gst-period">' + esc(row.month) + '</td><td><div class="gst-actions">' + dot + generate + icons + '</div></td></tr>';
     }).join("");
     $("gst-rows").querySelectorAll("button[data-type]").forEach(button => {
       button.onclick = () => download(button.dataset.type,button.dataset.period,button.dataset.format,button);
@@ -543,29 +535,30 @@
     button.disabled = true;
     button.textContent = "Checking…";
     try {
-      if (type === "GSTR2A" && format === "G") {
-        await generateGstr2a(period,button);
-      } else if (type === "GSTR2A" && format === "D") {
-        await downloadGstr2aFile(period,button);
+      if (format === "G") {
+        if (type === "GSTR2A") {
+          await generateGstr2a(period,button);
+        } else {
+          const params = new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:type});
+          const generated = await callGstApi(API + "/offline/download/generate?" + params.toString(),type + " report generation");
+          apiData = apiData.filter(x => x.name !== "generate-" + type + "-" + period);
+          apiData.push({name:"generate-" + type + "-" + period,url:API + "/offline/download/generate?" + params.toString(),ok:true,data:generated});
+          renderDeveloper();
+          button.textContent = "✓";
+        }
       } else if (type === "GSTR1" && format === "JSON") {
         await downloadGstr1Json(period,button);
       } else if (type === "GSTR3B" && format === "PDF") {
         await downloadGstr3bPdf(period,button);
       } else {
-        // Keep the existing download flow for other return types/formats.
-        const latest = await getJson(API + "/rolestatus?rtn_prd=" + encodeURIComponent(period));
-        if (!filing(latest,type).filed) throw new Error("GST Portal does not currently mark this return as Filed. Download stopped.");
-        const params = new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:type});
-        if (format === "EX") params.set("file_type","EX");
-        const generate = await fetch(API + "/offline/download/generate?" + params.toString(),{
-          credentials:"include",cache:"no-store",headers:{Accept:"application/json, text/plain, */*"}
-        });
-        if (!generate.ok) throw new Error("Report generation returned HTTP " + generate.status);
-        await generate.text();
         const fileParams = new URLSearchParams({rtn_prd:period,rtn_typ:type,file_num:"1"});
-        if (format === "EX") fileParams.set("file_type","EX");
+        const generateParams = new URLSearchParams({flag:"0",rtn_prd:period,rtn_typ:type});
+        if (format === "EX") { fileParams.set("file_type","EX"); generateParams.set("file_type","EX"); }
+        await callGstApi(API + "/offline/download/generate?" + generateParams.toString(),type + " " + format + " generation");
+        await wait(1200);
         const downloadUrl = API + "/offline/download/url?" + fileParams.toString();
-        const filename = "GST_" + type + "_" + period + (format === "EX" ? "_Excel.zip" : ".zip");
+        const ext = format === "PDF" ? ".pdf" : format === "EX" ? "_Excel.zip" : "_JSON.zip";
+        const filename = "GST_" + type + "_" + period + ext;
         await startNativeDownload(downloadUrl,filename);
       }
       if (format !== "G") button.textContent = "Started";
