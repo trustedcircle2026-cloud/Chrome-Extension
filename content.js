@@ -93,8 +93,10 @@
       '#gst-report-panel #gst-report{margin-top:10px}#gst-report-panel .gst-report-title{display:flex;justify-content:space-between;margin:4px 0 6px;font-size:11px}#gst-report-panel .gst-report-title span{font-size:9px;color:#555}' +
       '#gst-report-panel .gst-table-wrap{max-height:430px;overflow:auto;border:1px solid #aaa;border-radius:4px}#gst-report-panel table{width:100%;border-collapse:collapse;font-size:9px}' +
       '#gst-report-panel th{position:sticky;top:0;background:#eee;padding:7px 5px;text-align:left;border-bottom:1px solid #aaa}#gst-report-panel td{padding:6px 5px;border-top:1px solid #ddd;white-space:nowrap}' +
-      '#gst-report-panel .gst-period{font-weight:bold}#gst-report-panel .gst-actions{display:flex;gap:4px}#gst-report-panel .gst-actions button{padding:4px 6px;font-size:8px}' +
-      '#gst-report-panel .gst-status{font-size:8px;color:#555}#gst-report-panel .gst-status.filed{font-weight:bold;color:#111}#gst-report-panel .gst-note{font-size:8px;color:#555;margin:6px 0}' +
+      '#gst-report-panel .gst-period{font-weight:bold}#gst-report-panel .gst-actions{display:flex;align-items:center;gap:5px}#gst-report-panel .gst-actions button{padding:4px 6px;font-size:8px}' +
+      '#gst-report-panel .gst-dot{display:inline-block;flex:0 0 8px;width:8px;height:8px;border-radius:50%;background:#aeb4bc;border:1px solid #9299a2;vertical-align:middle}#gst-report-panel .gst-dot.filed{background:#20a45a;border-color:#168344;box-shadow:0 0 3px #20a45a}' +
+      '#gst-report-panel .gst-file-icon{display:inline-flex;align-items:center;justify-content:center;min-width:27px;height:23px;padding:0 5px;border:1px solid #888;border-radius:4px;background:#fff;color:#222;font-size:8px;font-weight:700}#gst-report-panel .gst-file-icon.disabled{opacity:.35;border-style:dashed}' +
+      '#gst-report-panel .gst-note{font-size:8px;color:#555;margin:6px 0}#gst-report-panel .gst-legend{display:flex;gap:10px;align-items:center;font-size:8px;color:#555;margin:5px 0}#gst-report-panel .gst-legend .gst-dot{margin-right:3px}' +
       '#gst-report-panel #gst-gate{height:100%;min-height:120px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:9px;padding:8px 5px}#gst-report-panel #gst-gate[hidden]{display:none}#gst-report-panel .gst-gate-title{font-size:14px;font-weight:700}#gst-report-panel #gst-gate-copy{font-size:10px;color:#555;margin:0}#gst-report-panel #gst-gate-action{max-width:230px}' +
       '#gst-report-panel #gst-dev-page{font-size:10px}#gst-report-panel .gst-dev-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}#gst-report-panel #gst-api-count{font-size:9px;color:#555;margin-bottom:6px}#gst-report-panel #gst-api{max-height:350px;overflow:auto;background:#f5f5f5;border:1px solid #ddd;padding:8px;font:9px monospace;white-space:pre-wrap;overflow-wrap:anywhere}' +
       '#gst-report-panel #gst-resize{position:absolute;right:2px;bottom:2px;width:17px;height:17px;cursor:nwse-resize;touch-action:none}#gst-report-panel #gst-resize:after{content:"";position:absolute;right:4px;bottom:4px;width:8px;height:8px;border-right:3px solid #111;border-bottom:3px solid #111}' +
@@ -313,16 +315,18 @@
     $("gst-return-heading").textContent = label;
     $("gst-rows").innerHTML = rows.map(row => {
       const result = row.statuses[type] || {filed:false,label:"Status unavailable"};
-      const dot = '<span class="gst-dot' + (result.filed ? ' filed' : '') + '" title="' + (result.filed ? 'Filed' : 'Not filed') + '"></span>';
+      const dot = type === "GSTR2A" ? "" : '<span class="gst-dot' + (result.filed ? ' filed' : '') + '" title="' + (result.filed ? 'Filed' : 'Not filed') + '"></span>';
       let action = "";
       if (type === "GSTR2A") {
         const generated = gstr2aGenerated.has(row.period);
-        action = '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="G">G</button>' +
-          (generated ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="D">D</button>' : '');
+        action = '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="G" title="Generate Excel">G</button>' +
+          (generated ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="D" title="Download Excel">D</button>' : '');
       } else if (result.filed && type === "GSTR1") {
-        action = '<button data-type="GSTR1" data-period="' + row.period + '" data-format="JSON">JSON</button>';
+        action = '<button data-type="GSTR1" data-period="' + row.period + '" data-format="JSON" title="Download JSON">JSON</button>' +
+          '<span class="gst-file-icon disabled" title="PDF download not yet available">PDF</span>' +
+          '<span class="gst-file-icon disabled" title="Excel download not yet available">XLS</span>';
       } else if (result.filed && type === "GSTR3B") {
-        action = '<button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF">PDF</button>';
+        action = '<button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF" title="Download PDF">PDF</button>';
       }
       return '<tr><td class="gst-period">' + esc(row.month) + '</td><td><div class="gst-actions">' + dot + action + '</div></td></tr>';
     }).join("");
