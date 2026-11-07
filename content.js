@@ -21,7 +21,8 @@
     {c:"09",n:"Uttar Pradesh"},{c:"05",n:"Uttarakhand"},{c:"19",n:"West Bengal"}
   ];
   const months = ["April","May","June","July","August","September","October","November","December","January","February","March"];
-  const returnTypes = ["GSTR3B","GSTR1","GSTR2A"];
+  const returnTypes = ["GSTR1","GSTR2A","GSTR2B","GSTR3B","GSTR9","GSTR9C"];
+  let selectedReturnType = localStorage.getItem("gstSelectedReturnType") || "GSTR1";
   let panel = null, apiData = [], identity = {name:"",gstin:"",state:""}, rows = [], loading = false, downloading = false;
   const gstr2aGenerated = new Set();
 
@@ -63,9 +64,9 @@
         '<section id="gst-user-page">' +
           '<div class="gst-grid">' +
             '<div class="gst-identity"><small>TRADE NAME</small><b id="gst-name">Loading taxpayer…</b><div class="gst-meta"><span><small>GSTIN</small><b id="gst-gstin">—</b></span><span><small>STATE</small><b id="gst-state">—</b></span></div></div>' +
-            '<div class="gst-year"><label for="gst-fy">FINANCIAL YEAR</label><select id="gst-fy"><option value="">Loading…</option></select><button id="gst-refresh" class="gst-primary">Refresh</button></div>' +
+            '<div class="gst-year"><label for="gst-fy">FINANCIAL YEAR</label><select id="gst-fy"><option value="">Loading…</option></select><label for="gst-return-type">RETURN TYPE</label><select id="gst-return-type"><option value="GSTR1">GSTR-1</option><option value="GSTR2A">GSTR-2A</option><option value="GSTR2B">GSTR-2B</option><option value="GSTR3B">GSTR-3B</option><option value="GSTR9">GSTR-9</option><option value="GSTR9C">GSTR-9C</option></select><button id="gst-refresh" class="gst-primary">Refresh</button></div>' +
           '</div>' +
-          '<section id="gst-report" hidden><div class="gst-report-title"><b>GST Returns</b><span id="gst-caption"></span></div><div class="gst-table-wrap"><table><thead><tr><th>Period</th><th>GSTR-3B</th><th>GSTR-1</th><th>GSTR-2A</th></tr></thead><tbody id="gst-rows"></tbody></table></div><p class="gst-note">Only returns marked as filed by the GST Portal can be downloaded.</p></section>' +
+          '<section id="gst-report" hidden><div class="gst-report-title"><b>GST Returns</b><span id="gst-caption"></span></div><div class="gst-table-wrap"><table><thead><tr><th>Period</th><th id="gst-return-heading">GSTR-1</th></tr></thead><tbody id="gst-rows"></tbody></table></div><p class="gst-note"><span class="gst-dot filed"></span> Filed &nbsp; <span class="gst-dot"></span> Not filed</p></section>' +
         '</section>' +
         '<section id="gst-dev-page" hidden><div class="gst-dev-head"><b>Developer diagnostics</b><button id="gst-user-back">Back to User</button></div><div id="gst-api-count"></div><pre id="gst-api"></pre></section>' +
       '</main><div id="gst-resize"></div>';
@@ -306,20 +307,24 @@
     }));
   }
   function renderRows() {
+    const type = selectedReturnType;
+    const label = type.replace("GSTR","GSTR-");
     $("gst-caption").textContent = $("gst-fy").value + " • " + rows.length + " periods";
+    $("gst-return-heading").textContent = label;
     $("gst-rows").innerHTML = rows.map(row => {
-      const cell = type => {
-        if (type === "GSTR2A") {
-          const generated = gstr2aGenerated.has(row.period);
-          return '<div class="gst-actions"><button data-type="GSTR2A" data-period="' + row.period + '" data-format="G">G</button>' +
-            (generated ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="D">D</button>' : '') + '</div>';
-        }
-        const result = row.statuses[type];
-        if (!result.filed) return '<span class="gst-status">' + esc(result.label) + '</span>';
-        if (type === "GSTR3B") return '<div class="gst-actions"><span class="gst-status filed">Filed</span><button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF">PDF</button></div>';
-        return '<div class="gst-actions"><button data-type="' + type + '" data-period="' + row.period + '" data-format="JSON">JSON</button></div>';
-      };
-      return '<tr><td class="gst-period">' + esc(row.month) + '</td><td>' + cell("GSTR3B") + '</td><td>' + cell("GSTR1") + '</td><td>' + cell("GSTR2A") + '</td></tr>';
+      const result = row.statuses[type] || {filed:false,label:"Status unavailable"};
+      const dot = '<span class="gst-dot' + (result.filed ? ' filed' : '') + '" title="' + (result.filed ? 'Filed' : 'Not filed') + '"></span>';
+      let action = "";
+      if (type === "GSTR2A") {
+        const generated = gstr2aGenerated.has(row.period);
+        action = '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="G">G</button>' +
+          (generated ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="D">D</button>' : '');
+      } else if (result.filed && type === "GSTR1") {
+        action = '<button data-type="GSTR1" data-period="' + row.period + '" data-format="JSON">JSON</button>';
+      } else if (result.filed && type === "GSTR3B") {
+        action = '<button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF">PDF</button>';
+      }
+      return '<tr><td class="gst-period">' + esc(row.month) + '</td><td><div class="gst-actions">' + dot + action + '</div></td></tr>';
     }).join("");
     $("gst-rows").querySelectorAll("button[data-type]").forEach(button => {
       button.onclick = () => download(button.dataset.type,button.dataset.period,button.dataset.format,button);
@@ -342,7 +347,7 @@
       localStorage.setItem("gstExpandedHeight",String(panel.offsetHeight));
       saveGeometry();
     } catch (error) {
-      $("gst-rows").innerHTML = '<tr><td colspan="4">' + esc(error.message) + '</td></tr>';
+      $("gst-rows").innerHTML = '<tr><td colspan="2">' + esc(error.message) + '</td></tr>';
     } finally {
       loading = false;
       $("gst-refresh").disabled = false;
