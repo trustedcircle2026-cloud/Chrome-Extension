@@ -309,14 +309,14 @@
     $("gst-caption").textContent = $("gst-fy").value + " • " + rows.length + " periods";
     $("gst-rows").innerHTML = rows.map(row => {
       const cell = type => {
-        const result = row.statuses[type];
-        if (!result.filed) return '<span class="gst-status">' + esc(result.label) + '</span>';
-        if (type === "GSTR3B") return '<div class="gst-actions"><span class="gst-status filed">Filed</span><button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF">PDF</button></div>';
         if (type === "GSTR2A") {
           const generated = gstr2aGenerated.has(row.period);
           return '<div class="gst-actions"><button data-type="GSTR2A" data-period="' + row.period + '" data-format="G">G</button>' +
             (generated ? '<button data-type="GSTR2A" data-period="' + row.period + '" data-format="D">D</button>' : '') + '</div>';
         }
+        const result = row.statuses[type];
+        if (!result.filed) return '<span class="gst-status">' + esc(result.label) + '</span>';
+        if (type === "GSTR3B") return '<div class="gst-actions"><span class="gst-status filed">Filed</span><button data-type="GSTR3B" data-period="' + row.period + '" data-format="PDF">PDF</button></div>';
         return '<div class="gst-actions"><button data-type="' + type + '" data-period="' + row.period + '" data-format="JSON">JSON</button></div>';
       };
       return '<tr><td class="gst-period">' + esc(row.month) + '</td><td>' + cell("GSTR3B") + '</td><td>' + cell("GSTR1") + '</td><td>' + cell("GSTR2A") + '</td></tr>';
