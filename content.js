@@ -315,7 +315,10 @@
     $("gst-return-heading").textContent = label;
     $("gst-rows").innerHTML = rows.map(row => {
       const result = row.statuses[type] || {filed:false,label:"Status unavailable"};
-      const dot = '<span class="gst-dot' + (result.filed ? ' filed' : '') + '" title="' + (result.filed ? 'Filed' : 'Not filed') + '"></span>';
+      if (!result.filed) {
+        return '<tr><td class="gst-period">' + esc(row.month) + '</td><td><span class="gst-not-filed">Not Filed</span></td></tr>';
+      }
+      const dot = '<span class="gst-dot filed" title="Filed"></span>';
       const icons = '<button class="gst-file-icon" data-type="' + type + '" data-period="' + row.period + '" data-format="PDF" title="Download PDF" aria-label="Download PDF">PDF</button>' +
         '<button class="gst-file-icon" data-type="' + type + '" data-period="' + row.period + '" data-format="EX" title="Download Excel" aria-label="Download Excel">XLS</button>' +
         '<button class="gst-file-icon" data-type="' + type + '" data-period="' + row.period + '" data-format="JSON" title="Download JSON" aria-label="Download JSON">{ }</button>';
